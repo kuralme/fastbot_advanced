@@ -1,0 +1,10 @@
+services:
+  micro-ros-agent:
+    image: microros/micro-ros-agent:jazzy
+    container_name: uros_agent
+    restart: always
+    network_mode: host
+    volumes:
+      - /dev:/dev
+    privileged: true
+    command: serial --dev /dev/ttyUSB0 --baudrate 115200 -v6
