@@ -7,11 +7,12 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_err.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
-#include "esp_err.h"
 
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
@@ -52,18 +53,12 @@ geometry_msgs__msg__Twist msg_twist;
 nav_msgs__msg__Odometry msg_odom;
 
 static size_t uart_port = UART_NUM_0;
-
-static inline int clamp_int(int v, int min, int max)
-{
-    if (v < min)
-        return min;
-    if (v > max)
-        return max;
-    return v;
-}
+static int64_t last_cmd_time = 0;
+#define CMD_VEL_TIMEOUT_MS 500
 
 void twist_cb(const void *msgin)
 {
+    last_cmd_time = esp_timer_get_time() / 1000;
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
     const float SCALE = 255.0f;
 
@@ -89,6 +84,9 @@ void micro_ros_task(void *arg)
     configure_motors();
     configure_encoders();
 
+    rcl_node_t node;
+    RCCHECK(rclc_node_init_default(&node, "esp32_twist_node", "", &support));
+
     RCCHECK(rclc_subscription_init_default(&subscriber, &node,
                                            ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
     RCCHECK(rclc_publisher_init_default(&odom_publisher, &node,
@@ -102,6 +100,13 @@ void micro_ros_task(void *arg)
     {
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 
+        // Watchdog check
+        int64_t now = esp_timer_get_time() / 1000;
+        if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
+        {
+            set_motor_speeds(0, 0); // Stop if we lost connection
+        }
+
         update_odometry(&msg_odom);
 
         // Setup Odom msg header
@@ -110,7 +115,7 @@ void micro_ros_task(void *arg)
         msg_odom.header.stamp.nanosec = (uint32_t)((time_ms % 1000) * 1000000);
         msg_odom.header.frame_id.data = "odom";
 
-        rcl_publish(&odom_publisher, &msg_odom, NULL);
+        RCSOFTCHECK(rcl_publish(&odom_publisher, &msg_odom, NULL));
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 

@@ -12,6 +12,16 @@
 
 #define TIM_FREQ_HZ 5000
 #define MOTOR_DEADZONE 40
+#define PWM_MAX_DUTY ((1 << 8) - 1) // 255
+
+static inline int clamp_spd(int v, int min, int max)
+{
+    if (v < min)
+        return min;
+    if (v > max)
+        return max;
+    return v;
+}
 
 void configure_motors(void)
 {
@@ -43,6 +53,9 @@ void configure_motors(void)
 
 void set_motor_speeds(int left_pwm, int right_pwm)
 {
+    left_pwm = clamp_spd(left_pwm, -PWM_MAX_DUTY, PWM_MAX_DUTY);
+    right_pwm = clamp_spd(right_pwm, -PWM_MAX_DUTY, PWM_MAX_DUTY);
+
     ledc_set_duty(LEDC_LOW_SPEED_MODE, L_F_CH, (left_pwm > 0) ? left_pwm : 0);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, L_B_CH, (left_pwm < 0) ? -left_pwm : 0);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, R_F_CH, (right_pwm > 0) ? right_pwm : 0);
