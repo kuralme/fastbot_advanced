@@ -58,13 +58,16 @@ static int64_t last_cmd_time = 0;
 
 void twist_cb(const void *msgin)
 {
+    // Watchdog update
     last_cmd_time = esp_timer_get_time() / 1000;
+
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
     const float SCALE = 255.0f;
 
     int left_pwm = (int)((msg->linear.x - msg->angular.z) * SCALE);
     int right_pwm = (int)((msg->linear.x + msg->angular.z) * SCALE);
 
+    // Move the motors
     set_motor_speeds(apply_deadzone(left_pwm), apply_deadzone(right_pwm));
 }
 
@@ -73,6 +76,7 @@ void micro_ros_task(void *arg)
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
 
+    // Wait for agent connection
     while (RCL_RET_OK != rmw_uros_ping_agent(100, 1))
     {
         printf("Waiting for agent...\n");
@@ -81,9 +85,11 @@ void micro_ros_task(void *arg)
 
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
 
+    // Initialize hardware
     configure_motors();
     configure_encoders();
 
+    // Create node, subscriber, and publisher
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "esp32_twist_node", "", &support));
 
@@ -92,6 +98,7 @@ void micro_ros_task(void *arg)
     RCCHECK(rclc_publisher_init_default(&odom_publisher, &node,
                                         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
 
+    // Attach to executor
     rclc_executor_t executor;
     RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
     RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg_twist, &twist_cb, ON_NEW_DATA));
@@ -128,6 +135,7 @@ void micro_ros_task(void *arg)
 
 void app_main(void)
 {
+    // Initialize micro-ROS custom UART transport
     rmw_uros_set_custom_transport(
         true,
         (void *)&uart_port,
