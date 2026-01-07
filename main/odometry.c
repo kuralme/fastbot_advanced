@@ -55,13 +55,13 @@ void update_odometry(nav_msgs__msg__Odometry *msg)
     static long last_left = 0, last_right = 0;
     long curr_l, curr_r;
 
-    // 1. Snapshot the volatile tick counts safely using a spinlock
+    // snapshot volatile tick counts safely
     portENTER_CRITICAL(&tick_spinlock);
     curr_l = left_tick_count;
     curr_r = right_tick_count;
     portEXIT_CRITICAL(&tick_spinlock);
 
-    // 2. Perform Kinematics math
+    // kinematics math
     double d_left = (double)(curr_l - last_left) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
     double d_right = (double)(curr_r - last_right) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
     last_left = curr_l;
@@ -70,8 +70,7 @@ void update_odometry(nav_msgs__msg__Odometry *msg)
     double d_dist = (d_right + d_left) / 2.0;
     double d_theta = (d_right - d_left) / WHEEL_BASE;
 
-    // 3. Update Global Pose safely using the Mutex
-    // (In case another task ever wants to read robot_x/y/theta)
+    // update global pose safely using the mutex
     if (xSemaphoreTake(odom_mutex, pdMS_TO_TICKS(5)) == pdTRUE)
     {
         robot_x += d_dist * cos(robot_theta + d_theta / 2.0);

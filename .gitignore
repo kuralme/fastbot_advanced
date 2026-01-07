@@ -1,6 +1,6 @@
 # Standard ESP-IDF ignores
 build/
-sdkconfig
+# sdkconfig
 sdkconfig.old
 managed_components/
 
@@ -17,6 +17,8 @@ CMakeFiles/
 CMakeScripts/
 Testing/
 Makefile
+libmicroros.a
+esp32_toolchain.cmake
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
