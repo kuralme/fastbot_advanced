@@ -21,6 +21,7 @@
 #include <geometry_msgs/msg/twist.h>
 #include <std_msgs/msg/string.h>
 #include <nav_msgs/msg/odometry.h>
+#include <std_msgs/msg/int32.h>
 
 #define RMW_UXRCE_TRANSPORT_CUSTOM
 #include <rmw_microxrcedds_c/config.h>
@@ -48,11 +49,13 @@
         }                                                                                  \
     }
 
-rcl_subscription_t subscriber;
-rcl_publisher_t odom_publisher;
+rcl_subscription_t twist_sub;
+rcl_publisher_t odom_pub, heartbeat_pub;
 geometry_msgs__msg__Twist msg_twist;
 nav_msgs__msg__Odometry msg_odom;
 
+std_msgs__msg__Int32 heartbeat_msg;
+static int32_t heartbeat_counter = 0;
 static size_t uart_port = UART_NUM_0;
 static int64_t last_cmd_time = 0;
 #define CMD_VEL_TIMEOUT_MS 500
@@ -72,8 +75,8 @@ void twist_cb(const void *msgin)
 void controller_task(void *arg)
 {
     // Initialize PIDs: [Kp, Ki, Kd]
-    pid_init(&pid_l, 400.0, 100.0, 10.0, -255, 255);
-    pid_init(&pid_r, 400.0, 100.0, 10.0, -255, 255);
+    pid_init(&pid_l, 200.0, 100.0, 10.0, -255, 255);
+    pid_init(&pid_r, 200.0, 100.0, 10.0, -255, 255);
 
     const float dt = 0.02; // 20ms (50Hz)
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -95,7 +98,7 @@ void controller_task(void *arg)
             int out_l = pid_compute(&pid_l, current_vel.left, dt);
             int out_r = pid_compute(&pid_r, current_vel.right, dt);
 
-            // Driving motors via your driver (includes clamping and deadzone)
+            // Drive motors via your L298 (includes clamping and deadzone)
             set_motor_speeds(apply_deadzone(out_l), apply_deadzone(out_r));
         }
 
@@ -121,30 +124,30 @@ void micro_ros_task(void *arg)
     configure_motors();
     configure_encoders();
 
-    // Create node, subscriber, and publisher
+    // Create ROS2 entities
     rcl_node_t node;
-    RCCHECK(rclc_node_init_default(&node, "esp32_twist_node", "", &support));
+    RCCHECK(rclc_node_init_default(&node, "esp32_controller_node", "", &support));
 
-    RCCHECK(rclc_subscription_init_default(&subscriber, &node,
+    RCCHECK(rclc_subscription_init_default(&twist_sub, &node,
                                            ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
-    RCCHECK(rclc_publisher_init_default(&odom_publisher, &node,
+    RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
                                         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
+    RCCHECK(rclc_publisher_init_default(&heartbeat_pub, &node,
+                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+                                        "esp32_heartbeat"));
 
     // Attach to executor
     rclc_executor_t executor;
     RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
-    RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg_twist, &twist_cb, ON_NEW_DATA));
+    RCCHECK(rclc_executor_add_subscription(&executor, &twist_sub, &msg_twist, &twist_cb, ON_NEW_DATA));
 
     while (1)
     {
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 
-        // // Watchdog check
-        // int64_t now = esp_timer_get_time() / 1000;
-        // if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
-        // {
-        //     set_motor_speeds(0, 0); // Stop if we lost connection
-        // }
+        // Publish heartbeat
+        heartbeat_msg.data = heartbeat_counter++;
+        RCSOFTCHECK(rcl_publish(&heartbeat_pub, &heartbeat_msg, NULL));
 
         update_odometry(&msg_odom);
 
@@ -154,13 +157,14 @@ void micro_ros_task(void *arg)
         msg_odom.header.stamp.nanosec = (uint32_t)((time_ms % 1000) * 1000000);
         msg_odom.header.frame_id.data = "odom";
 
-        RCSOFTCHECK(rcl_publish(&odom_publisher, &msg_odom, NULL));
-        vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz
+        RCSOFTCHECK(rcl_publish(&odom_pub, &msg_odom, NULL));
+        vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz
     }
 
     // Cleanup
-    RCCHECK(rcl_subscription_fini(&subscriber, &node));
-    RCCHECK(rcl_publisher_fini(&odom_publisher, &node));
+    RCCHECK(rcl_subscription_fini(&twist_sub, &node));
+    RCCHECK(rcl_publisher_fini(&odom_pub, &node));
+    RCCHECK(rcl_publisher_fini(&heartbeat_pub, &node));
     RCCHECK(rcl_node_fini(&node));
     vTaskDelete(NULL);
 }
@@ -183,7 +187,7 @@ void app_main(void)
         NULL,
         5,
         NULL,
-        0);
+        0); // On PRO_CPU
 
     xTaskCreatePinnedToCore(
         controller_task,
@@ -192,5 +196,5 @@ void app_main(void)
         NULL,
         6, // Higher priority for the PID loop
         NULL,
-        1);
+        1); // On APP_CPU
 }
