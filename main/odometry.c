@@ -35,6 +35,30 @@ void IRAM_ATTR right_enc_cb()
     portEXIT_CRITICAL_ISR(&tick_spinlock);
 }
 
+wheel_vel_t get_wheel_velocities(float dt)
+{
+    static long last_left = 0, last_right = 0;
+    long curr_l, curr_r;
+
+    portENTER_CRITICAL(&tick_spinlock);
+    curr_l = left_tick_count;
+    curr_r = right_tick_count;
+    portEXIT_CRITICAL(&tick_spinlock);
+
+    // Calculate distance moved since last call (meters)
+    double d_l = (double)(curr_l - last_left) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
+    double d_r = (double)(curr_r - last_right) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
+
+    last_left = curr_l;
+    last_right = curr_r;
+
+    // Velocity = distance / time
+    wheel_vel_t vel;
+    vel.left = (float)(d_l / dt);
+    vel.right = (float)(d_r / dt);
+    return vel;
+}
+
 void configure_encoders()
 {
     odom_mutex = xSemaphoreCreateMutex();
