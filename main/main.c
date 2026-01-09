@@ -28,6 +28,7 @@
 #include "esp32_serial_transport.h"
 #include "motor_driver.h"
 #include "odometry.h"
+#include "pid.h"
 
 #define RCCHECK(fn)                                                                      \
     {                                                                                    \
@@ -55,20 +56,51 @@ nav_msgs__msg__Odometry msg_odom;
 static size_t uart_port = UART_NUM_0;
 static int64_t last_cmd_time = 0;
 #define CMD_VEL_TIMEOUT_MS 500
+#define ROBOT_WHEEL_BASE 0.125
+PID_t pid_l, pid_r;
 
 void twist_cb(const void *msgin)
 {
-    // Watchdog update
     last_cmd_time = esp_timer_get_time() / 1000;
-
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
-    const float SCALE = 255.0f;
 
-    int left_pwm = (int)((msg->linear.x - msg->angular.z) * SCALE);
-    int right_pwm = (int)((msg->linear.x + msg->angular.z) * SCALE);
+    // Target wheel speeds in m/s
+    pid_l.setpoint = msg->linear.x - (msg->angular.z * ROBOT_WHEEL_BASE / 2.0);
+    pid_r.setpoint = msg->linear.x + (msg->angular.z * ROBOT_WHEEL_BASE / 2.0);
+}
 
-    // Move the motors
-    set_motor_speeds(apply_deadzone(left_pwm), apply_deadzone(right_pwm));
+void controller_task(void *arg)
+{
+    // Initialize PIDs: [Kp, Ki, Kd]
+    pid_init(&pid_l, 400.0, 100.0, 10.0, -255, 255);
+    pid_init(&pid_r, 400.0, 100.0, 10.0, -255, 255);
+
+    const float dt = 0.02; // 20ms (50Hz)
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    while (1)
+    {
+        wheel_vel_t current_vel = get_wheel_velocities(dt);
+
+        // Watchdog check
+        int64_t now = esp_timer_get_time() / 1000;
+        if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
+        {
+            pid_reset(&pid_l);
+            pid_reset(&pid_r);
+            set_motor_speeds(0, 0);
+        }
+        else
+        {
+            int out_l = pid_compute(&pid_l, current_vel.left, dt);
+            int out_r = pid_compute(&pid_r, current_vel.right, dt);
+
+            // Driving motors via your driver (includes clamping and deadzone)
+            set_motor_speeds(apply_deadzone(out_l), apply_deadzone(out_r));
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
+    }
 }
 
 void micro_ros_task(void *arg)
@@ -107,12 +139,12 @@ void micro_ros_task(void *arg)
     {
         rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 
-        // Watchdog check
-        int64_t now = esp_timer_get_time() / 1000;
-        if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
-        {
-            set_motor_speeds(0, 0); // Stop if we lost connection
-        }
+        // // Watchdog check
+        // int64_t now = esp_timer_get_time() / 1000;
+        // if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
+        // {
+        //     set_motor_speeds(0, 0); // Stop if we lost connection
+        // }
 
         update_odometry(&msg_odom);
 
@@ -123,7 +155,7 @@ void micro_ros_task(void *arg)
         msg_odom.header.frame_id.data = "odom";
 
         RCSOFTCHECK(rcl_publish(&odom_publisher, &msg_odom, NULL));
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz
     }
 
     // Cleanup
@@ -150,6 +182,15 @@ void app_main(void)
         4000,
         NULL,
         5,
+        NULL,
+        0);
+
+    xTaskCreatePinnedToCore(
+        controller_task,
+        "controller_task",
+        4000,
+        NULL,
+        6, // Higher priority for the PID loop
         NULL,
         1);
 }
