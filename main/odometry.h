@@ -1,16 +1,17 @@
 #ifndef ODOMETRY_H
 #define ODOMETRY_H
 
-#include <nav_msgs/msg/odometry.h>
-
 typedef struct
 {
-    float left;
-    float right;
-} wheel_vel_t;
+    float vel_l;  // Filtered velocity Left
+    float vel_r;  // Filtered velocity Right
+    double x;     // Odom X
+    double y;     // Odom Y
+    double theta; // Odom Yaw
+} robot_state_t;
 
-wheel_vel_t get_wheel_velocities(float dt);
 void configure_encoders(void);
-void update_odometry(nav_msgs__msg__Odometry *msg);
+void get_robot_state(robot_state_t *copy);
+void update_robot_state(float dt);
 
 #endif // ODOMETRY_H

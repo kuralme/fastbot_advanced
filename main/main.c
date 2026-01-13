@@ -53,14 +53,18 @@ rcl_subscription_t twist_sub;
 rcl_publisher_t odom_pub, heartbeat_pub;
 geometry_msgs__msg__Twist msg_twist;
 nav_msgs__msg__Odometry msg_odom;
-
 std_msgs__msg__Int32 heartbeat_msg;
 static int32_t heartbeat_counter = 0;
-static size_t uart_port = UART_NUM_0;
 static int64_t last_cmd_time = 0;
+static size_t uart_port = UART_NUM_0;
+
 #define CMD_VEL_TIMEOUT_MS 500
 #define ROBOT_WHEEL_BASE 0.125
 PID_t pid_l, pid_r;
+
+#include <std_msgs/msg/float32.h>
+rcl_publisher_t wheel_left_pub, wheel_right_pub;
+std_msgs__msg__Float32 wheel_left_msg_, wheel_right_msg_;
 
 void twist_cb(const void *msgin)
 {
@@ -74,35 +78,58 @@ void twist_cb(const void *msgin)
 
 void controller_task(void *arg)
 {
-    // Initialize PIDs: [Kp, Ki, Kd]
-    pid_init(&pid_l, 150.0, 5.0, 20.0, -255, 255);
-    pid_init(&pid_r, 150.0, 5.0, 20.0, -255, 255);
+    // Initialize Feed-forward PID gains: [Kp, Ki, Kd, Kff]
+    pid_init(&pid_l, 150.0, 60.0, 10.0, 270.0);
+    pid_init(&pid_r, 150.0, 60.0, 10.0, 270.0);
 
-    const float dt = 0.02; // 20ms (50Hz)
+    uint64_t last_time = esp_timer_get_time();
     TickType_t xLastWakeTime = xTaskGetTickCount();
+
+    // Simple Alpha Filter (0.0 to 1.0) - helps smooth out encoder jitter
+    float filter_alpha = 0.2;
+    float filtered_vel_l = 0;
+    float filtered_vel_r = 0;
 
     while (1)
     {
-        wheel_vel_t current_vel = get_wheel_velocities(dt);
+        // Actual DT
+        uint64_t now = esp_timer_get_time();
+        float dt = (float)(now - last_time) / 1000000.0f; // ms to s
+        last_time = now;
+
+        // Prevent division by zero or huge spikes on first run
+        if (dt <= 0)
+            dt = 0.02;
+
+        update_robot_state(dt);
+
+        // Low-pass filter to measured velocities
+        robot_state_t robot_state;
+        get_robot_state(&robot_state);
+        filtered_vel_l = (filter_alpha * robot_state.vel_l) + (1.0 - filter_alpha) * filtered_vel_l;
+        filtered_vel_r = (filter_alpha * robot_state.vel_r) + (1.0 - filter_alpha) * filtered_vel_r;
+
+        wheel_left_msg_.data = filtered_vel_l;
+        wheel_right_msg_.data = filtered_vel_r;
 
         // Watchdog check
-        int64_t now = esp_timer_get_time() / 1000;
-        if (now - last_cmd_time > CMD_VEL_TIMEOUT_MS)
+        int64_t now_ms = now / 1000;
+        if (now_ms - last_cmd_time > CMD_VEL_TIMEOUT_MS)
         {
+            // Stop motors if no cmd_vel received recently
             pid_reset(&pid_l);
             pid_reset(&pid_r);
             set_motor_speeds(0, 0);
         }
         else
         {
-            int out_l = pid_compute(&pid_l, current_vel.left, dt);
-            int out_r = pid_compute(&pid_r, current_vel.right, dt);
-
-            // Drive motors via your L298 (includes clamping and deadzone)
+            // Compute PID and set motor speeds
+            int out_l = pid_compute(&pid_l, filtered_vel_l, dt);
+            int out_r = pid_compute(&pid_r, filtered_vel_r, dt);
             set_motor_speeds(apply_deadzone(out_l), apply_deadzone(out_r));
         }
 
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20)); // 50Hz
     }
 }
 
@@ -116,6 +143,11 @@ void micro_ros_task(void *arg)
     // Create ROS2 entities
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "esp32_controller_node", "", &support));
+
+    RCCHECK(rclc_publisher_init_default(&wheel_left_pub, &node,
+                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "left_wheel_vel"));
+    RCCHECK(rclc_publisher_init_default(&wheel_right_pub, &node,
+                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "right_wheel_vel"));
 
     RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
                                         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "fastbot_odom"));
@@ -144,14 +176,23 @@ void micro_ros_task(void *arg)
         heartbeat_msg.data = heartbeat_counter++;
         RCSOFTCHECK(rcl_publish(&heartbeat_pub, &heartbeat_msg, NULL));
 
-        update_odometry(&msg_odom);
+        // Snapshot robot state
+        robot_state_t robot_state;
+        get_robot_state(&robot_state);
 
         // Publish odometry
         int64_t time_ms = rmw_uros_epoch_millis();
         msg_odom.header.stamp.sec = (int32_t)(time_ms / 1000);
         msg_odom.header.stamp.nanosec = (uint32_t)((time_ms % 1000) * 1000000);
         msg_odom.header.frame_id.data = "odom";
+        msg_odom.pose.pose.position.x = robot_state.x;
+        msg_odom.pose.pose.position.y = robot_state.y;
+        msg_odom.pose.pose.orientation.z = sin(robot_state.theta / 2.0);
+        msg_odom.pose.pose.orientation.w = cos(robot_state.theta / 2.0);
         RCSOFTCHECK(rcl_publish(&odom_pub, &msg_odom, NULL));
+
+        RCSOFTCHECK(rcl_publish(&wheel_left_pub, &wheel_left_msg_, NULL));
+        RCSOFTCHECK(rcl_publish(&wheel_right_pub, &wheel_right_msg_, NULL));
 
         vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz
     }
