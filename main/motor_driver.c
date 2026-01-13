@@ -25,6 +25,7 @@ static inline int clamp_spd(int v, int min, int max)
 
 void configure_motors(void)
 {
+    // Configure LEDC timer for PWM
     ledc_timer_config_t ledc_timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .duty_resolution = LEDC_TIMER_8_BIT,
@@ -37,6 +38,7 @@ void configure_motors(void)
     int pins[] = {LEFT_MOTOR_FORWARD_GPIO, LEFT_MOTOR_BACKWARD_GPIO, RIGHT_MOTOR_FORWARD_GPIO, RIGHT_MOTOR_BACKWARD_GPIO};
     int channels[] = {L_F_CH, L_B_CH, R_F_CH, R_B_CH};
 
+    // Configure LEDC channels
     for (int i = 0; i < 4; i++)
     {
         ledc_channel_config_t ledc_channel = {
@@ -49,6 +51,9 @@ void configure_motors(void)
             .hpoint = 0};
         ledc_channel_config(&ledc_channel);
     }
+
+    // Better initialize speeds to 0
+    set_motor_speeds(0, 0);
 }
 
 void set_motor_speeds(int left_pwm, int right_pwm)

@@ -75,8 +75,8 @@ void twist_cb(const void *msgin)
 void controller_task(void *arg)
 {
     // Initialize PIDs: [Kp, Ki, Kd]
-    pid_init(&pid_l, 200.0, 100.0, 10.0, -255, 255);
-    pid_init(&pid_r, 200.0, 100.0, 10.0, -255, 255);
+    pid_init(&pid_l, 150.0, 5.0, 20.0, -255, 255);
+    pid_init(&pid_r, 150.0, 5.0, 20.0, -255, 255);
 
     const float dt = 0.02; // 20ms (50Hz)
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -108,38 +108,33 @@ void controller_task(void *arg)
 
 void micro_ros_task(void *arg)
 {
-    rcl_allocator_t allocator = rcl_get_default_allocator();
+    // Initialize micro-ROS support
     rclc_support_t support;
-
-    // Wait for agent connection
-    while (RCL_RET_OK != rmw_uros_ping_agent(100, 1))
-    {
-        printf("Waiting for agent...\n");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-
+    rcl_allocator_t allocator = rcl_get_default_allocator();
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
-
-    // Initialize hardware
-    configure_motors();
-    configure_encoders();
 
     // Create ROS2 entities
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "esp32_controller_node", "", &support));
 
+    RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
+                                        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "fastbot_odom"));
+    RCCHECK(rclc_publisher_init_default(&heartbeat_pub, &node,
+                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "esp32_heartbeat"));
     RCCHECK(rclc_subscription_init_default(&twist_sub, &node,
                                            ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
-    RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
-                                        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "odom"));
-    RCCHECK(rclc_publisher_init_default(&heartbeat_pub, &node,
-                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-                                        "esp32_heartbeat"));
 
-    // Attach to executor
+    // Attach to executor (subscriptions only)
     rclc_executor_t executor;
     RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
     RCCHECK(rclc_executor_add_subscription(&executor, &twist_sub, &msg_twist, &twist_cb, ON_NEW_DATA));
+
+    // Wait for agent connection
+    // while (RCL_RET_OK != rmw_uros_ping_agent(100, 1))
+    // {
+    //     printf("Waiting for agent...\n");
+    //     vTaskDelay(pdMS_TO_TICKS(1000));
+    // }
 
     while (1)
     {
@@ -151,13 +146,13 @@ void micro_ros_task(void *arg)
 
         update_odometry(&msg_odom);
 
-        // Setup Odom msg header
+        // Publish odometry
         int64_t time_ms = rmw_uros_epoch_millis();
         msg_odom.header.stamp.sec = (int32_t)(time_ms / 1000);
         msg_odom.header.stamp.nanosec = (uint32_t)((time_ms % 1000) * 1000000);
         msg_odom.header.frame_id.data = "odom";
-
         RCSOFTCHECK(rcl_publish(&odom_pub, &msg_odom, NULL));
+
         vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz
     }
 
@@ -180,12 +175,16 @@ void app_main(void)
         esp32_serial_write,
         esp32_serial_read);
 
+    // Initialize hardware
+    configure_motors();
+    configure_encoders();
+
     xTaskCreatePinnedToCore(
         micro_ros_task,
         "uros_task",
         4000,
         NULL,
-        5,
+        5, // Lower priority for communication
         NULL,
         0); // On PRO_CPU
 
