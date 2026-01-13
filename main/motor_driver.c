@@ -52,7 +52,7 @@ void configure_motors(void)
         ledc_channel_config(&ledc_channel);
     }
 
-    // Better initialize speeds to 0
+    // Initialize speeds to 0 for safety
     set_motor_speeds(0, 0);
 }
 
@@ -72,7 +72,11 @@ void set_motor_speeds(int left_pwm, int right_pwm)
 
 int apply_deadzone(int pwm)
 {
-    if (pwm == 0 || (pwm > -MOTOR_DEADZONE && pwm < MOTOR_DEADZONE))
+    if (pwm == 0)
         return 0;
-    return pwm;
+
+    if (pwm > 0)
+        return pwm + MOTOR_DEADZONE; // Shift up: 1 becomes 41
+    else
+        return pwm - MOTOR_DEADZONE; // Shift down: -1 becomes -41
 }
