@@ -11,7 +11,7 @@
 #define R_B_CH LEDC_CHANNEL_3
 
 #define TIM_FREQ_HZ 5000
-#define MOTOR_DEADZONE 40
+#define MOTOR_DEADZONE 45
 #define PWM_MAX_DUTY ((1 << 8) - 1) // 255
 
 static inline int clamp_spd(int v, int min, int max)
@@ -74,9 +74,5 @@ int apply_deadzone(int pwm)
 {
     if (pwm == 0)
         return 0;
-
-    if (pwm > 0)
-        return pwm + MOTOR_DEADZONE; // Shift up: 1 becomes 41
-    else
-        return pwm - MOTOR_DEADZONE; // Shift down: -1 becomes -41
+    return (pwm > 0) ? (pwm + MOTOR_DEADZONE) : (pwm - MOTOR_DEADZONE);
 }

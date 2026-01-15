@@ -10,7 +10,7 @@
 
 #define WHEEL_RADIUS 0.0325 // 65mm diameter wheels [m]
 #define WHEEL_BASE 0.125    // Wheel separation [m]
-#define TICKS_PER_REV 1270  // 4X CPR encoders
+#define TICKS_PER_REV 1265  // 4X CPR encoders
 
 #define RIGHT_ENC_A 32
 #define RIGHT_ENC_B 33
@@ -41,7 +41,7 @@ void configure_encoders()
     // Configure all encoder GPIOs as inputs without forcing pull-ups here because
     // pins GPIO34/35 are input-only and do NOT have internal pull-up resistors.
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_POSEDGE,
+        .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << LEFT_ENC_A) | (1ULL << LEFT_ENC_B) | (1ULL << RIGHT_ENC_A) | (1ULL << RIGHT_ENC_B),
         .pull_up_en = GPIO_PULLUP_DISABLE,
