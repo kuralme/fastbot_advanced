@@ -16,7 +16,7 @@ CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
 Testing/
-Makefile
+# Makefile
 libmicroros.a
 esp32_toolchain.cmake
 cmake_install.cmake
