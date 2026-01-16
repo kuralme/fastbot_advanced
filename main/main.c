@@ -62,10 +62,6 @@ static size_t uart_port = UART_NUM_0;
 #define ROBOT_WHEEL_BASE 0.125
 PID_t pid_l, pid_r;
 
-#include <std_msgs/msg/float32.h>
-rcl_publisher_t wheel_left_pub, wheel_right_pub;
-std_msgs__msg__Float32 wheel_left_msg_, wheel_right_msg_;
-
 void twist_cb(const void *msgin)
 {
     last_cmd_time = esp_timer_get_time() / 1000;
@@ -108,9 +104,6 @@ void controller_task(void *arg)
         get_robot_state(&robot_state);
         filtered_vel_l = (filter_alpha * robot_state.vel_l) + (1.0 - filter_alpha) * filtered_vel_l;
         filtered_vel_r = (filter_alpha * robot_state.vel_r) + (1.0 - filter_alpha) * filtered_vel_r;
-
-        wheel_left_msg_.data = filtered_vel_l;
-        wheel_right_msg_.data = filtered_vel_r;
 
         // Watchdog check
         int64_t now_ms = now / 1000;
@@ -157,17 +150,12 @@ void micro_ros_task(void *arg)
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "esp32_controller_node", "", &support));
 
-    RCCHECK(rclc_publisher_init_default(&wheel_left_pub, &node,
-                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "left_wheel_vel"));
-    RCCHECK(rclc_publisher_init_default(&wheel_right_pub, &node,
-                                        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "right_wheel_vel"));
-
     RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
                                         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "fastbot_odom"));
     RCCHECK(rclc_publisher_init_default(&heartbeat_pub, &node,
                                         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "esp32_heartbeat"));
     RCCHECK(rclc_subscription_init_default(&twist_sub, &node,
-                                           ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
+                                           ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "fastbot_cmd_vel"));
 
     // Attach to executor (subscriptions only)
     rclc_executor_t executor;
@@ -196,9 +184,6 @@ void micro_ros_task(void *arg)
         msg_odom.pose.pose.orientation.z = sin(robot_state.theta / 2.0);
         msg_odom.pose.pose.orientation.w = cos(robot_state.theta / 2.0);
         RCSOFTCHECK(rcl_publish(&odom_pub, &msg_odom, NULL));
-
-        RCSOFTCHECK(rcl_publish(&wheel_left_pub, &wheel_left_msg_, NULL));
-        RCSOFTCHECK(rcl_publish(&wheel_right_pub, &wheel_right_msg_, NULL));
 
         vTaskDelay(pdMS_TO_TICKS(100)); // 10Hz
     }
