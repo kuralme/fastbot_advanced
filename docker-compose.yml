@@ -7,4 +7,4 @@ services:
     volumes:
       - /dev:/dev
     privileged: true
-    command: serial --dev /dev/ttyUSB0 --baudrate 115200 -v6
+    command: serial --dev /dev/ttyUSB0 --baudrate 921600 -v6
