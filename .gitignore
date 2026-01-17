@@ -1,0 +1,21 @@
+# ESP-IDF ignores
+firmware/build/
+# firmware/sdkconfig
+firmware/sdkconfig.old
+
+# micro-ROS specific generated files and others
+firmware/components/micro_ros_espidf_component/micro_ros_src/
+firmware/components/micro_ros_espidf_component/micro_ros_dev/
+firmware/components/micro_ros_espidf_component/include/
+firmware/components/micro_ros_espidf_component/examples/
+
+# CMake and IDE files
+*CMakeLists.txt.user
+*CMakeCache.txt
+*CMakeFiles/
+*CMakeScripts/
+*libmicroros.a
+*esp32_toolchain.cmake
+*cmake_install.cmake
+*install_manifest.txt
+*compile_commands.json
