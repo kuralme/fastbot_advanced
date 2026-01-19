@@ -1,10 +1,27 @@
 services:
   micro-ros-agent:
     image: microros/micro-ros-agent:jazzy
-    container_name: uros_agent
-    restart: always
-    network_mode: host
-    volumes:
-      - /dev:/dev
+    container_name: micro-ros-agent
     privileged: true
-    command: serial --dev /dev/ttyUSB0 --baudrate 921600 -v6
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=0
+    devices:
+      - /dev/ttyUSB0:/dev/esp32
+    command: serial --dev /dev/esp32 --baudrate 921600 -v6
+
+  fastbot-ros2-slam:
+    build:
+        context: ..
+        dockerfile: docker/dockerfile-ros2-slam
+    image: fastbot-ros2-slam
+    container_name: fastbot-ros2-slam
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    devices:
+      - /dev/ttyACM0:/dev/lslidar
+    privileged: true
+    network_mode: host
+    entrypoint: /ros_entrypoint.sh
+    command: ros2 launch lslidar_driver lslidar_launch.py
