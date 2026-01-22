@@ -41,7 +41,7 @@ The firmware is built using **ESP-IDF**. It leverages the dual-core architecture
 
 *Status: Under Development*
 
-The high-level logic resides on an OPi running a *PREEMPT_RT* patched Linux kernel. This ensures that the NMPC (Nonlinear Model Predictive Control) solver has prioritized access to the CPU, reducing "jitter" that would otherwise cause the controller to oscillate at high speeds.
+The high-level logic resides on an OPi running Ubuntu 24.
 
 #### Key Components:
 * **Slam Toolbox:** 2D Lidar-based mapping and localization.

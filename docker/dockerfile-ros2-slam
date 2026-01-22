@@ -19,8 +19,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-pcl-conversions \
     ros-jazzy-pluginlib \
     ros-jazzy-diagnostic-updater \
+    ros-jazzy-teleop-twist-keyboard \
     # ros-jazzy-v4l2-camera \
-    # ros-jazzy-image-transport-plugins \
     ros-jazzy-nav2-msgs \
     ros-jazzy-nav2-amcl \
     ros-jazzy-nav2-map-server \
@@ -28,6 +28,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-nav2-bringup \
     ros-jazzy-nav2-bt-navigator \
     ros-jazzy-cartographer-ros \
+    ros-jazzy-image-transport-plugins \
     ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 

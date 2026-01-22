@@ -1,0 +1,23 @@
+FROM arm64v8/ros:jazzy-ros-base-noble
+
+# Install dependencies
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    python3-pip \
+    i2c-tools \
+    libgpiod-dev \
+    python3-libgpiod \
+    libgpiod2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Adafruit libraries
+RUN pip3 install --no-cache-dir --break-system-packages \
+    adafruit-blinka \
+    adafruit-circuitpython-bno08x \
+    adafruit-extended-bus \
+    gpiod
+
+COPY ./slam_stack/imu_ros2_driver/imu_node.py .
+COPY ./docker/ros_entrypoint.sh /
+
+RUN chmod +x /ros_entrypoint.sh
+ENTRYPOINT [ "/ros_entrypoint.sh" ]
