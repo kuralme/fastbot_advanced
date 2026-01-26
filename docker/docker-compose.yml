@@ -41,4 +41,5 @@ services:
     devices:
       - /dev/i2c-5:/dev/i2c-5
       - /dev/gpiochip4:/dev/gpiochip4
+      - /dev/mem:/dev/mem
     command: python3 imu_node.py
