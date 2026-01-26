@@ -14,6 +14,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     adafruit-blinka \
     adafruit-circuitpython-bno08x \
     adafruit-extended-bus \
+    smbus2 \
     gpiod
 
 COPY ./slam_stack/imu_ros2_driver/imu_node.py .

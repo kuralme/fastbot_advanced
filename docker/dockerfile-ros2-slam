@@ -11,7 +11,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     libboost-all-dev \
     libpcap-dev \
     libpcl-dev \
-    # v4l-utils \
+    ros-jazzy-rmw-fastrtps-cpp \
     ros-jazzy-rviz2 \
     ros-jazzy-xacro \
     ros-jazzy-tf2* \
@@ -20,7 +20,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-pluginlib \
     ros-jazzy-diagnostic-updater \
     ros-jazzy-teleop-twist-keyboard \
-    # ros-jazzy-v4l2-camera \
     ros-jazzy-nav2-msgs \
     ros-jazzy-nav2-amcl \
     ros-jazzy-nav2-map-server \
@@ -29,7 +28,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-nav2-bt-navigator \
     ros-jazzy-cartographer-ros \
     ros-jazzy-image-transport-plugins \
-    ros-jazzy-rmw-cyclonedds-cpp \
+    # v4l-utils \
+    # ros-jazzy-v4l2-camera \
     && rm -rf /var/lib/apt/lists/*
 
 # Create ROS2 workspace

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 source "/opt/ros/$ROS_DISTRO/setup.bash"
 
 # Source local ws if it exists

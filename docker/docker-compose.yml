@@ -6,19 +6,20 @@ services:
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     devices:
       - /dev/ttyUSB0:/dev/esp32
     command: serial --dev /dev/esp32 --baudrate 921600 -v6
 
-  ros2-slam:
+  fastbot-ros2-slam:
     build:
         context: ..
         dockerfile: docker/dockerfile-ros2-slam
-    image: ros2-slam
-    container_name: ros2-slam
+    image: fastbot-ros2-slam
+    container_name: fastbot-ros2-slam
     environment:
       - ROS_DOMAIN_ID=0
-      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     devices:
       - /dev/ttyACM0:/dev/lslidar
     privileged: true
@@ -26,17 +27,18 @@ services:
     entrypoint: /ros_entrypoint.sh
     command: ros2 launch lslidar_driver lslidar_launch.py
 
-  ros2-imu-driver:
+  fastbot-imu-driver:
     build:
         context: ..
         dockerfile: docker/dockerfile-ros2-imu
-    container_name: ros2-imu-driver
+    container_name: fastbot-imu-driver
     network_mode: host
     privileged: true
     environment:
       - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - BLINKA_ORANGEPI_5=1
     devices:
       - /dev/i2c-5:/dev/i2c-5
-      # - /dev/gpiochip4:/dev/gpiochip4
+      - /dev/gpiochip4:/dev/gpiochip4
     command: python3 imu_node.py
