@@ -21,11 +21,13 @@ services:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
     devices:
-      - /dev/ttyACM0:/dev/lslidar
+      # - /dev/ttyACM0:/dev/lslidar
+      - /dev/bus/usb:/dev/bus/usb
     privileged: true
     network_mode: host
     entrypoint: /ros_entrypoint.sh
-    command: ros2 launch lslidar_driver lslidar_launch.py
+    command: ros2 launch depthai_ros_driver camera.launch.py
+    # command: ros2 launch lslidar_driver lslidar_launch.py
 
   fastbot-imu-driver:
     build:

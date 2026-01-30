@@ -8,11 +8,11 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     python3-setuptools \
     build-essential \
     lsb-release \
+    libusb-1.0-0 \
     libboost-all-dev \
     libpcap-dev \
     libpcl-dev \
     ros-jazzy-rmw-fastrtps-cpp \
-    ros-jazzy-rviz2 \
     ros-jazzy-xacro \
     ros-jazzy-tf2* \
     ros-jazzy-joint-state-publisher \
@@ -20,6 +20,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-pluginlib \
     ros-jazzy-diagnostic-updater \
     ros-jazzy-teleop-twist-keyboard \
+    ros-jazzy-image-transport-plugins \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-vision-msgs \
+    ros-jazzy-depthai-ros \
     ros-jazzy-nav2-msgs \
     ros-jazzy-nav2-amcl \
     ros-jazzy-nav2-map-server \
@@ -27,20 +31,23 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ros-jazzy-nav2-bringup \
     ros-jazzy-nav2-bt-navigator \
     ros-jazzy-cartographer-ros \
-    ros-jazzy-image-transport-plugins \
     # v4l-utils \
     # ros-jazzy-v4l2-camera \
     && rm -rf /var/lib/apt/lists/*
 
 # Create ROS2 workspace
 RUN mkdir -p /colcon_ws/src
-COPY ./docker/ros_entrypoint.sh /
+# RUN git clone -b jazzy https://github.com/luxonis/depthai-ros.git /colcon_ws/src/depthai-ros
 COPY ./slam_stack /colcon_ws/src/
+COPY ./docker/ros_entrypoint.sh /
+
 RUN source /opt/ros/jazzy/setup.bash && \
     cd /colcon_ws && \
     colcon build --symlink-install 
     # && \
     # rm -rf build/ log/
+
+RUN apt-get update && apt-get install -y usbutils
 
 RUN chmod +x /ros_entrypoint.sh
 ENTRYPOINT [ "/ros_entrypoint.sh" ]
