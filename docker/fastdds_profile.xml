@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastrtps_profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>udp_transport</transport_id>
+                <type>UDPv4</type>
+                <maxMessageSize>65500</maxMessageSize>
+                <sendBufferSize>1048576</sendBufferSize>
+                <receiveBufferSize>4194304</receiveBufferSize>
+            </transport_descriptor>
+        </transport_descriptors>
+
+        <participant profile_name="default_participant_profile" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>udp_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>true</useBuiltinTransports>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

@@ -38,16 +38,15 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
 # Create ROS2 workspace
 RUN mkdir -p /colcon_ws/src
 # RUN git clone -b jazzy https://github.com/luxonis/depthai-ros.git /colcon_ws/src/depthai-ros
-COPY ./slam_stack /colcon_ws/src/
+# COPY ./slam_stack /colcon_ws/src/
 COPY ./docker/ros_entrypoint.sh /
+COPY ./docker/fastdds_profile.xml /
 
 RUN source /opt/ros/jazzy/setup.bash && \
     cd /colcon_ws && \
     colcon build --symlink-install 
     # && \
     # rm -rf build/ log/
-
-RUN apt-get update && apt-get install -y usbutils
 
 RUN chmod +x /ros_entrypoint.sh
 ENTRYPOINT [ "/ros_entrypoint.sh" ]

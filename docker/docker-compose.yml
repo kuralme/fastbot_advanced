@@ -17,17 +17,16 @@ services:
         dockerfile: docker/dockerfile-ros2-slam
     image: fastbot-ros2-slam
     container_name: fastbot-ros2-slam
+    privileged: true
+    network_mode: host
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-    devices:
-      # - /dev/ttyACM0:/dev/lslidar
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/fastdds_profile.xml
+    volumes:
       - /dev/bus/usb:/dev/bus/usb
-    privileged: true
-    network_mode: host
     entrypoint: /ros_entrypoint.sh
     command: ros2 launch depthai_ros_driver camera.launch.py
-    # command: ros2 launch lslidar_driver lslidar_launch.py
 
   fastbot-imu-driver:
     build:
