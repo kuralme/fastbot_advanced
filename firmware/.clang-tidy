@@ -1,0 +1,13 @@
+---
+Checks: >
+  -*,
+  performance-*,
+  readability-*,
+  bugprone-*,
+  clang-analyzer-*,
+  portability-*,
+  misc-unused-parameters
+
+HeaderFilterRegex: 'firmware/main/.*'
+FormatStyle: none
+WarningsAsErrors: ''

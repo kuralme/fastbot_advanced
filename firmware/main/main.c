@@ -130,13 +130,14 @@ void IRAM_ATTR pid_timer_callback(void *arg)
 
         // --- ENCODER SANITY CHECK ---
         // Significant cmd but near-zero movement
-        bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabs(state.vel_l) < 0.001);
-        bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabs(state.vel_r) < 0.001);
+        bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabsf(state.vel_l) < 0.001);
+        bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabsf(state.vel_r) < 0.001);
 
-        if (motor_stuck_l || motor_stuck_r)
+        if (motor_stuck_l || motor_stuck_r) {
             stall_counter++;
-        else
+        } else {
             stall_counter = 0;
+}
 
         if (stall_counter > STALL_TICKS)
         {

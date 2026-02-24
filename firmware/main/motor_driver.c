@@ -16,10 +16,12 @@
 
 static inline int clamp_spd(int v, int min, int max)
 {
-    if (v < min)
+    if (v < min) {
         return min;
-    if (v > max)
+}
+    if (v > max) {
         return max;
+}
     return v;
 }
 
@@ -66,13 +68,15 @@ void set_motor_speeds(int left_pwm, int right_pwm)
     ledc_set_duty(LEDC_LOW_SPEED_MODE, R_F_CH, (right_pwm > 0) ? right_pwm : 0);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, R_B_CH, (right_pwm < 0) ? -right_pwm : 0);
 
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++) {
         ledc_update_duty(LEDC_LOW_SPEED_MODE, i);
+}
 }
 
 int apply_deadzone(int pwm)
 {
-    if (pwm == 0)
+    if (pwm == 0) {
         return 0;
+}
     return (pwm > 0) ? (pwm + MOTOR_DEADZONE) : (pwm - MOTOR_DEADZONE);
 }

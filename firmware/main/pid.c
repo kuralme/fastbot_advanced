@@ -25,10 +25,12 @@ int pid_compute(PID_t *pid, float measured, float dt)
     float feed_forward = pid->setpoint * pid->kff;
     pid->integral += error * dt;
     float i_limit = 50.0;
-    if (pid->integral > i_limit)
+    if (pid->integral > i_limit) {
         pid->integral = i_limit;
-    if (pid->integral < -i_limit)
+}
+    if (pid->integral < -i_limit) {
         pid->integral = -i_limit;
+}
     float derivative = (error - pid->prev_error) / dt;
     pid->prev_error = error;
 
@@ -36,9 +38,11 @@ int pid_compute(PID_t *pid, float measured, float dt)
     float output = feed_forward + (pid->kp * error) + (pid->ki * pid->integral) + (pid->kd * derivative);
 
     // Output clamping
-    if (output > pid->out_max)
+    if (output > pid->out_max) {
         output = pid->out_max;
-    if (output < pid->out_min)
+}
+    if (output < pid->out_min) {
         output = pid->out_min;
+}
     return (int)output;
 }

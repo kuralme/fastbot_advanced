@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #ifndef _MICROROS_CLIENT_ESP32_SERIAL_TRANSPORT_H_
-#define _MICROROS_CLIENT_ESP32_SERIAL_TRANSPORT_H_
+#define MICROROS_CLIENT_ESP32_SERIAL_TRANSPORT_H_
 
 #ifdef __cplusplus
 extern "C"

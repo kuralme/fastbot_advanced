@@ -62,11 +62,13 @@ void configure_encoders()
 
     esp_err_t r;
     r = gpio_isr_handler_add(LEFT_ENC_A, left_enc_cb, NULL);
-    if (r != ESP_OK)
+    if (r != ESP_OK) {
         ESP_LOGE("ODOM", "Failed to add ISR for LEFT_ENC_A: %d", r);
+}
     r = gpio_isr_handler_add(RIGHT_ENC_A, right_enc_cb, NULL);
-    if (r != ESP_OK)
+    if (r != ESP_OK) {
         ESP_LOGE("ODOM", "Failed to add ISR for RIGHT_ENC_A: %d", r);
+}
 }
 
 void get_robot_state(robot_state_t *copy)
@@ -78,8 +80,10 @@ void get_robot_state(robot_state_t *copy)
 
 void update_robot_state(float dt)
 {
-    static long last_l = 0, last_r = 0;
-    long curr_l, curr_r;
+    static long last_l = 0;
+    static long last_r = 0;
+    long curr_l;
+    long curr_r;
 
     // Get ticks safely
     portENTER_CRITICAL(&tick_isr_spinlock);
@@ -101,8 +105,8 @@ void update_robot_state(float dt)
     double d_theta = (d_r - d_l) / WHEEL_BASE;
     shared_state.vel_l = (float)(d_l / dt);
     shared_state.vel_r = (float)(d_r / dt);
-    shared_state.x += d_dist * cos(current_theta + d_theta / 2.0);
-    shared_state.y += d_dist * sin(current_theta + d_theta / 2.0);
+    shared_state.x += d_dist * cos(current_theta + (d_theta / 2.0));
+    shared_state.y += d_dist * sin(current_theta + (d_theta / 2.0));
     shared_state.theta += d_theta;
 
     portEXIT_CRITICAL(&state_spinlock);
