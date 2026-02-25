@@ -7,15 +7,17 @@
 #include "esp_attr.h"
 
 #include "odometry.h"
+#include "pid.h"
 
-#define WHEEL_RADIUS 0.0325 // 65mm diameter wheels [m]
-#define WHEEL_BASE 0.125    // Wheel separation [m]
-#define TICKS_PER_REV 1265  // 4X CPR encoders
+#define WHEEL_RADIUS 0.0325F // 65mm diameter wheels [m]
+#define WHEEL_BASE 0.125F    // Wheel separation [m]
+#define TICKS_PER_REV 1265   // 4X CPR encoders
 
 #define RIGHT_ENC_A 32
 #define RIGHT_ENC_B 33
 #define LEFT_ENC_A 34
 #define LEFT_ENC_B 35
+#define HALF_DIVISOR 2.0F
 
 static robot_state_t shared_state;
 static portMUX_TYPE tick_isr_spinlock = portMUX_INITIALIZER_UNLOCKED;
@@ -54,21 +56,22 @@ void configure_encoders()
     gpio_set_pull_mode(RIGHT_ENC_A, GPIO_PULLUP_ONLY);
     gpio_set_pull_mode(RIGHT_ENC_B, GPIO_PULLUP_ONLY);
 
-    esp_err_t err = gpio_install_isr_service(0);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+    esp_err_t isr_err = gpio_install_isr_service(0);
+    if (isr_err != ESP_OK && isr_err != ESP_ERR_INVALID_STATE)
     {
-        ESP_LOGE("ODOM", "gpio_install_isr_service failed: %d", err);
+        ESP_LOGE("ODOM", "gpio_install_isr_service failed: %d", isr_err);
     }
 
-    esp_err_t r;
-    r = gpio_isr_handler_add(LEFT_ENC_A, left_enc_cb, NULL);
-    if (r != ESP_OK) {
-        ESP_LOGE("ODOM", "Failed to add ISR for LEFT_ENC_A: %d", r);
-}
-    r = gpio_isr_handler_add(RIGHT_ENC_A, right_enc_cb, NULL);
-    if (r != ESP_OK) {
-        ESP_LOGE("ODOM", "Failed to add ISR for RIGHT_ENC_A: %d", r);
-}
+    esp_err_t isr_enc = gpio_isr_handler_add(LEFT_ENC_A, left_enc_cb, NULL);
+    if (isr_enc != ESP_OK)
+    {
+        ESP_LOGE("ODOM", "Failed to add ISR for LEFT_ENC_A: %d", isr_enc);
+    }
+    isr_enc = gpio_isr_handler_add(RIGHT_ENC_A, right_enc_cb, NULL);
+    if (isr_enc != ESP_OK)
+    {
+        ESP_LOGE("ODOM", "Failed to add ISR for RIGHT_ENC_A: %d", isr_enc);
+    }
 }
 
 void get_robot_state(robot_state_t *copy)
@@ -78,36 +81,38 @@ void get_robot_state(robot_state_t *copy)
     portEXIT_CRITICAL(&state_spinlock);
 }
 
-void update_robot_state(float dt)
+void update_robot_state()
 {
     static long last_l = 0;
     static long last_r = 0;
-    long curr_l;
-    long curr_r;
 
-    // Get ticks safely
     portENTER_CRITICAL(&tick_isr_spinlock);
-    curr_l = left_tick_count;
-    curr_r = right_tick_count;
+    long curr_l = left_tick_count;
+    long curr_r = right_tick_count;
     portEXIT_CRITICAL(&tick_isr_spinlock);
 
-    // Distance moved since last call [m]
-    double d_l = (double)(curr_l - last_l) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
-    double d_r = (double)(curr_r - last_r) * (2 * M_PI * WHEEL_RADIUS / TICKS_PER_REV);
-    last_l = curr_l;
-    last_r = curr_r;
+    const float meters_per_tick = (2.0F * (float)M_PI * WHEEL_RADIUS) / (float)TICKS_PER_REV;
+    float d_l = (float)(curr_l - last_l) * meters_per_tick;
+    float d_r = (float)(curr_r - last_r) * meters_per_tick;
 
-    // Update robot state safely
+    float d_dist = (d_r + d_l) / HALF_DIVISOR;
+    float d_theta = (d_r - d_l) / WHEEL_BASE;
+
+    float local_vel_l = d_l / PID_TS;
+    float local_vel_r = d_r / PID_TS;
+
+    // Update State
     portENTER_CRITICAL(&state_spinlock);
 
-    double current_theta = shared_state.theta;
-    double d_dist = (d_r + d_l) / 2.0;
-    double d_theta = (d_r - d_l) / WHEEL_BASE;
-    shared_state.vel_l = (float)(d_l / dt);
-    shared_state.vel_r = (float)(d_r / dt);
-    shared_state.x += d_dist * cos(current_theta + (d_theta / 2.0));
-    shared_state.y += d_dist * sin(current_theta + (d_theta / 2.0));
+    // Heading used for movement calculations is the average of the start and end headings
+    // during the interval, which is more accurate for small rotations
+    float move_angle = (float)shared_state.theta + (d_theta / HALF_DIVISOR);
+
+    shared_state.x += d_dist * cosf(move_angle);
+    shared_state.y += d_dist * sinf(move_angle);
     shared_state.theta += d_theta;
+    shared_state.vel_l = local_vel_l;
+    shared_state.vel_r = local_vel_r;
 
     portEXIT_CRITICAL(&state_spinlock);
 }

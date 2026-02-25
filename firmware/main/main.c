@@ -7,7 +7,6 @@
 #include <uxr/client/client.h>
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -51,6 +50,8 @@
             printf("Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
         }                                                                                  \
     }
+#define UROS_TASK_STACK_SIZE 4000
+#define UROS_TASK_PRIORITY 5
 
 rcl_subscription_t twist_sub;
 rcl_publisher_t odom_pub, heartbeat_pub;
@@ -63,19 +64,31 @@ std_srvs__srv__Trigger_Response ros_old_res;
 static int64_t last_cmd_time_ = 0;
 static int64_t last_sync_time_ = 0;
 static size_t uart_port = UART_NUM_0;
-#define ROBOT_WHEEL_BASE 0.125
+#define ROBOT_WHEEL_BASE 0.125F
+#define ROBOT_WHEEL_SEPERATION (ROBOT_WHEEL_BASE / 2.0F)
+#define FRAME_ID "odom"
+#define FRAME_ID_MAX_LEN 32
 
 PID_t pid_l, pid_r;
-#define PID_TS 0.02 // 20 ms
-static const float filter_alpha = 0.5;
-static float filtered_vel_l = 0;
-static float filtered_vel_r = 0;
+static const float filter_alpha = 0.5F;
+static float filtered_vel_l = 0.0F;
+static float filtered_vel_r = 0.0F;
 static int stall_counter = 0;
 static bool first_cmd_received = false;
 #define STALL_THRESHOLD_MS 200
 #define STALL_TICKS (STALL_THRESHOLD_MS / 20) // 10 iterations at 50Hz
 #define MIN_SAFE_PWM 50                       // Min PWM should definitely move the robot
+#define MIN_VALID_VEL 0.001F                  // For stall detection
+
 #define CMD_VEL_TIMEOUT_MS 300
+#define UROS_AGENT_PING_TIMEOUT_MS 100
+#define SYNC_TIMEOUT_MS 30000
+#define WATCHDOG_TIMEOUT_MS 1000
+
+#define MS_PER_SEC 1000
+#define US_PER_MS 1000
+#define NS_PER_MS 1000000
+#define HALF_DIVISOR 2.0F
 
 typedef enum
 {
@@ -85,7 +98,7 @@ typedef enum
 } system_state_t;
 atomic_int system_status_ = ATOMIC_VAR_INIT(SYSTEM_OK);
 
-void IRAM_ATTR pid_timer_callback(void *arg)
+void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
 {
     // Check for faults
     if (system_status_ != SYSTEM_OK)
@@ -95,15 +108,15 @@ void IRAM_ATTR pid_timer_callback(void *arg)
     }
 
     robot_state_t state;
-    update_robot_state(PID_TS);
+    update_robot_state();
     get_robot_state(&state);
 
     // Simple Alpha Filter (0.0 to 1.0) - helps smooth out encoder jitter
-    filtered_vel_l = (filter_alpha * state.vel_l) + (1.0 - filter_alpha) * filtered_vel_l;
-    filtered_vel_r = (filter_alpha * state.vel_r) + (1.0 - filter_alpha) * filtered_vel_r;
+    filtered_vel_l = (filter_alpha * state.vel_l) + (1.0F - filter_alpha) * filtered_vel_l;
+    filtered_vel_r = (filter_alpha * state.vel_r) + (1.0F - filter_alpha) * filtered_vel_r;
 
     // Watchdog & PID Compute
-    int64_t now_ms = esp_timer_get_time() / 1000;
+    int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
     if (!first_cmd_received)
     {
         if (last_cmd_time_ > 0)
@@ -125,13 +138,13 @@ void IRAM_ATTR pid_timer_callback(void *arg)
     }
     else
     {
-        int out_l = pid_compute(&pid_l, filtered_vel_l, PID_TS);
-        int out_r = pid_compute(&pid_r, filtered_vel_r, PID_TS);
+        int out_l = pid_compute(&pid_l, filtered_vel_l);
+        int out_r = pid_compute(&pid_r, filtered_vel_r);
 
         // --- ENCODER SANITY CHECK ---
         // Significant cmd but near-zero movement
-        bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabsf(state.vel_l) < 0.001);
-        bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabsf(state.vel_r) < 0.001);
+        bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabsf(state.vel_l) < MIN_VALID_VEL);
+        bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabsf(state.vel_r) < MIN_VALID_VEL);
 
         if (motor_stuck_l || motor_stuck_r)
         {
@@ -156,8 +169,8 @@ void IRAM_ATTR pid_timer_callback(void *arg)
 void start_control_loop()
 {
     // Initialize Feed-forward PID gains: [Kp, Ki, Kd, Kff]
-    pid_init(&pid_l, 150.0, 50.0, 10.0, 18.0);
-    pid_init(&pid_r, 150.0, 50.0, 10.0, 18.0);
+    pid_init(&pid_l, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
+    pid_init(&pid_r, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
 
     const esp_timer_create_args_t periodic_timer_args = {
         .callback = &pid_timer_callback,
@@ -170,15 +183,15 @@ void start_control_loop()
 
 void twist_cb(const void *msgin)
 {
-    last_cmd_time_ = esp_timer_get_time() / 1000;
+    last_cmd_time_ = esp_timer_get_time() / MS_PER_SEC;
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
 
     // Target wheel speeds in m/s
-    pid_l.setpoint = msg->linear.x - (msg->angular.z * ROBOT_WHEEL_BASE / 2.0);
-    pid_r.setpoint = msg->linear.x + (msg->angular.z * ROBOT_WHEEL_BASE / 2.0);
+    pid_l.setpoint = (float)msg->linear.x - ((float)msg->angular.z * ROBOT_WHEEL_SEPERATION);
+    pid_r.setpoint = (float)msg->linear.x + ((float)msg->angular.z * ROBOT_WHEEL_SEPERATION);
 }
 
-void reset_service_cb(const void *req, void *res)
+void reset_service_cb(const void *req __attribute__((unused)), void *res)
 {
     std_srvs__srv__Trigger_Response *res_in = (std_srvs__srv__Trigger_Response *)res;
 
@@ -207,19 +220,23 @@ void destroy_uros_entities(rcl_node_t *node, rclc_executor_t *executor, rcl_publ
     (void)rcl_node_fini(node);
 }
 
-void micro_ros_task(void *arg)
+void micro_ros_task(void *arg __attribute__((unused)))
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
     rcl_node_t node;
     rclc_executor_t executor;
 
+    static char odom_frame_buffer[FRAME_ID_MAX_LEN];
+    msg_odom_.header.frame_id.data = odom_frame_buffer;
+    msg_odom_.header.frame_id.capacity = sizeof(odom_frame_buffer);
+
     esp_task_wdt_add(NULL); // Subscribe the task to TWDT
 
     while (1)
     {
         // --- STATE 1: WAIT FOR AGENT ---
-        while (rmw_uros_ping_agent(50, 1) != RCL_RET_OK)
+        while (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -249,16 +266,16 @@ void micro_ros_task(void *arg)
         {
             esp_task_wdt_reset();
 
-            if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK)
+            if (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
             {
                 break; // Connection lost
             }
 
             // Handle Time Sync (ESP32-Orange Pi clocks)
-            int64_t now_ms = esp_timer_get_time() / 1000;
-            if (!initial_sync_done || (now_ms - last_sync_time_ > 30000))
+            int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
+            if (!initial_sync_done || (now_ms - last_sync_time_ > SYNC_TIMEOUT_MS))
             {
-                if (rmw_uros_sync_session(100) == RCL_RET_OK)
+                if (rmw_uros_sync_session(UROS_AGENT_PING_TIMEOUT_MS) == RCL_RET_OK)
                 {
                     last_sync_time_ = now_ms;
                     initial_sync_done = true;
@@ -277,17 +294,15 @@ void micro_ros_task(void *arg)
             get_robot_state(&robot_state);
             int64_t time_ms = rmw_uros_epoch_millis();
 
-            msg_odom_.header.frame_id.data = (char *)malloc(20);
-            (void)strcpy(msg_odom_.header.frame_id.data, "odom");
+            // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
+            (void)snprintf(msg_odom_.header.frame_id.data, msg_odom_.header.frame_id.capacity, "odom");
             msg_odom_.header.frame_id.size = strlen(msg_odom_.header.frame_id.data);
-            msg_odom_.header.frame_id.capacity = 20;
-            msg_odom_.header.frame_id.data = "odom";
-            msg_odom_.header.stamp.sec = (int32_t)(time_ms / 1000);
-            msg_odom_.header.stamp.nanosec = (uint32_t)((time_ms % 1000) * 1000000);
+            msg_odom_.header.stamp.sec = (int32_t)(time_ms / MS_PER_SEC);
+            msg_odom_.header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
             msg_odom_.pose.pose.position.x = robot_state.x;
             msg_odom_.pose.pose.position.y = robot_state.y;
-            msg_odom_.pose.pose.orientation.z = sin(robot_state.theta / 2.0);
-            msg_odom_.pose.pose.orientation.w = cos(robot_state.theta / 2.0);
+            msg_odom_.pose.pose.orientation.z = sin(robot_state.theta / HALF_DIVISOR);
+            msg_odom_.pose.pose.orientation.w = cos(robot_state.theta / HALF_DIVISOR);
             (void)rcl_publish(&odom_pub, &msg_odom_, NULL);
 
             vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz
@@ -312,7 +327,7 @@ void app_main(void)
 
     // Configure task watchdog
     esp_task_wdt_config_t twdt_config = {
-        .timeout_ms = 1000,
+        .timeout_ms = WATCHDOG_TIMEOUT_MS,
         .idle_core_mask = (1 << 0) | (1 << 1), // Watch idle tasks on both cores
         .trigger_panic = true,                 // RESET the ESP32 if a task hangs
     };
@@ -327,9 +342,9 @@ void app_main(void)
     xTaskCreatePinnedToCore(
         micro_ros_task,
         "uros_task",
-        4000,
+        UROS_TASK_STACK_SIZE,
         NULL,
-        5,
+        UROS_TASK_PRIORITY,
         NULL,
         1); // On APP_CPU
 }

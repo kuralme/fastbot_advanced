@@ -1,48 +1,52 @@
 #include "pid.h"
 
-void pid_init(PID_t *pid, float kp, float ki, float kd, float kff)
+void pid_init(PID_t *pid, PID_t config)
 {
-    pid->kp = kp;
-    pid->ki = ki;
-    pid->kd = kd;
-    pid->kff = kff;
-    pid->out_min = -255;
-    pid->out_max = 255;
+    pid->kp = config.kp;
+    pid->ki = config.ki;
+    pid->kd = config.kd;
+    pid->kff = config.kff;
+    pid->out_min = PID_OUT_MIN;
+    pid->out_max = PID_OUT_MAX;
     pid_reset(pid);
 }
 
 void pid_reset(PID_t *pid)
 {
-    pid->integral = 0.0;
-    pid->prev_error = 0.0;
-    pid->setpoint = 0.0;
+    pid->integral = 0.0F;
+    pid->prev_error = 0.0F;
+    pid->setpoint = 0.0F;
 }
 
-int pid_compute(PID_t *pid, float measured, float dt)
+int pid_compute(PID_t *pid, float measured)
 {
     float error = pid->setpoint - measured;
 
     float feed_forward = pid->setpoint * pid->kff;
-    pid->integral += error * dt;
-    float i_limit = 50.0;
-    if (pid->integral > i_limit) {
-        pid->integral = i_limit;
-}
-    if (pid->integral < -i_limit) {
-        pid->integral = -i_limit;
-}
-    float derivative = (error - pid->prev_error) / dt;
+
+    pid->integral += error * PID_TS;
+    if (pid->integral > PID_INT_LIMIT)
+    {
+        pid->integral = PID_INT_LIMIT;
+    }
+    if (pid->integral < -PID_INT_LIMIT)
+    {
+        pid->integral = -PID_INT_LIMIT;
+    }
+    float derivative = (error - pid->prev_error) / PID_TS;
     pid->prev_error = error;
 
     // Combine terms FF + PID
     float output = feed_forward + (pid->kp * error) + (pid->ki * pid->integral) + (pid->kd * derivative);
 
     // Output clamping
-    if (output > pid->out_max) {
+    if (output > pid->out_max)
+    {
         output = pid->out_max;
-}
-    if (output < pid->out_min) {
+    }
+    if (output < pid->out_min)
+    {
         output = pid->out_min;
-}
+    }
     return (int)output;
 }

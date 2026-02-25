@@ -7,14 +7,11 @@ Checks: >
   clang-analyzer-*,
   misc-*,
   -misc-include-cleaner,
-  -readability-identifier-naming,
-  -readability-magic-numbers
+  -misc-header-include-cycle,
+  -readability-function-cognitive-complexity
 
-HeaderFilterRegex: 'main/.*'
 FormatStyle: none
 WarningsAsErrors: ''
 CheckOptions:
-  - key: readability-identifier-naming.VariableCase
-    value: lower_case
   - key: bugprone-argument-comment.StrictMode
     value: true

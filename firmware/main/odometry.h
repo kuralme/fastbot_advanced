@@ -12,6 +12,6 @@ typedef struct
 
 void configure_encoders(void);
 void get_robot_state(robot_state_t *copy);
-void update_robot_state(float dt);
+void update_robot_state();
 
 #endif // ODOMETRY_H
