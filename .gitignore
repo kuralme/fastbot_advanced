@@ -19,3 +19,6 @@ firmware/components/micro_ros_espidf_component/examples/
 *cmake_install.cmake
 *install_manifest.txt
 *compile_commands.json
+
+# Clang tidy report
+tidy_report.txt

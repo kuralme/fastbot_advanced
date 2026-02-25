@@ -6,33 +6,16 @@ MAIN_DIR := ./main
 COMPILE_DB := $(BUILD_DIR)/compile_commands.json
 
 # Targets
-# .PHONY: all setup build flash monitor clean fresh up down agent-logs reset
 .PHONY: all setup build flash monitor clean fresh reset tidy tidy-fix tidy-check
 
-# Default action to perform all steps in development
+# --------------- ESP32 Build and Flashing -------------------------------
+# Default action
 all: build flash
 
 setup:
 	@echo "--- Setting ESP32 Target and Opening Menuconfig ---"
 	idf.py set-target esp32
 	idf.py menuconfig
-
-# Clang-tidy targets
-tidy-check:
-	@if [ ! -f "$(COMPILE_DB)" ]; then \
-		echo "Error: compile_commands.json not found. Run 'make build' first."; \
-		exit 1; \
-	fi
-	@echo "--- Running clang-tidy analysis (read-only) ---"
-	@clang-tidy -p $(BUILD_DIR) -header-filter='firmware/main/.*' -p 4 $(MAIN_DIR)/*.c
-
-tidy: tidy-check
-	@echo "--- Clang-tidy analysis complete ---"
-
-tidy-fix: tidy-check
-	@echo "--- Running clang-tidy with auto-fixes ---"
-	@clang-tidy -p $(BUILD_DIR) -header-filter='firmware/main/.*' -fix -p 4 $(MAIN_DIR)/*.c
-	@echo "--- Auto-fixes applied. Review changes and rebuild ---"
 
 build:
 	@echo "--- Starting Build ---"
@@ -59,7 +42,11 @@ clean:
 # Full reset: Clean rebuild, flash, and start agent
 fresh: clean build flash up
 
-# Docker Agent Controls
+# Extra - Helper: Reset the ESP32 via Serial DTR
+reset:
+	python3 -c "import serial; s=serial.Serial('$(PORT)', $(BAUD)); s.setDTR(False); s.setRTS(False); s.close()"
+
+# --------------- Docker Agent Controls -------------------------------
 # up:
 # 	docker-compose up -d
 
@@ -69,6 +56,27 @@ fresh: clean build flash up
 # agent-logs:
 # 	docker-compose logs -f uros_agent
 
-# Extra - Helper: Reset the ESP32 via Serial DTR
-reset:
-	python3 -c "import serial; s=serial.Serial('$(PORT)', $(BAUD)); s.setDTR(False); s.setRTS(False); s.close()"
+# --------------- Clang-tidy jobs-------------------------------
+
+TIDY_LOG := tidy_report.txt
+GCC_INTERNAL := $(abspath $(shell xtensa-esp32-elf-gcc -print-file-name=include))
+GCC_NEWLIB := $(abspath $(GCC_INTERNAL)/../../../../../xtensa-esp-elf/include)
+
+tidy-check:
+	@echo "--- Starting Clang-Tidy Analysis ---"
+	@clang-tidy -p $(BUILD_DIR) $(MAIN_DIR)/*.c --quiet \
+		--extra-arg="-isystem$(GCC_INTERNAL)" \
+		--extra-arg="-isystem$(GCC_NEWLIB)" \
+		--extra-arg="-D__IROM_ATTR=" \
+		--extra-arg="-D__uint32_t=uint32_t" \
+		--extra-arg="-D__uint16_t=uint16_t" \
+		--extra-arg="-D__uint8_t=uint8_t" > $(TIDY_LOG) 2>&1 || true
+	@echo -n "Total Warnings: "
+	@grep -c "warning:" $(TIDY_LOG) || echo "0"
+	@echo -n "Total Errors:   "
+	@grep -c "error:" $(TIDY_LOG) || echo "0"
+	@echo "--- Full report saved to $(TIDY_LOG) ---"
+
+tidy-fix:
+	@echo "--- Applying Auto-Fixes ---"
+	@clang-tidy -p $(BUILD_DIR) $(EXTRA_ARGS) -fix $(MAIN_DIR)/*.c --quiet

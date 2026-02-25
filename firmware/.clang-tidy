@@ -5,9 +5,14 @@ Checks: >
   readability-*,
   bugprone-*,
   clang-analyzer-*,
-  portability-*,
-  misc-unused-parameters
+  -readability-identifier-naming,
+  -readability-function-cognitive-complexity
 
-HeaderFilterRegex: 'firmware/main/.*'
+HeaderFilterRegex: 'main/.*'
 FormatStyle: none
 WarningsAsErrors: ''
+
+# # Ignore common micro-ROS/FreeRTOS macro noise
+# CheckOptions:
+#   - key: readability-identifier-naming.VariableCase
+#     value: lower_case

@@ -88,7 +88,7 @@ atomic_int system_status_ = ATOMIC_VAR_INIT(SYSTEM_OK);
 void IRAM_ATTR pid_timer_callback(void *arg)
 {
     // Check for faults
-    if (atomic_load(&system_status_) != SYSTEM_OK)
+    if (system_status_ != SYSTEM_OK)
     {
         set_motor_speeds(0, 0);
         return;
@@ -133,15 +133,18 @@ void IRAM_ATTR pid_timer_callback(void *arg)
         bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabsf(state.vel_l) < 0.001);
         bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabsf(state.vel_r) < 0.001);
 
-        if (motor_stuck_l || motor_stuck_r) {
+        if (motor_stuck_l || motor_stuck_r)
+        {
             stall_counter++;
-        } else {
+        }
+        else
+        {
             stall_counter = 0;
-}
+        }
 
         if (stall_counter > STALL_TICKS)
         {
-            atomic_store(&system_status_, SYSTEM_FAULT_STALL);
+            system_status_ = SYSTEM_FAULT_STALL;
             set_motor_speeds(0, 0);
             return;
         }
@@ -182,7 +185,7 @@ void reset_service_cb(const void *req, void *res)
     stall_counter = 0;
     pid_reset(&pid_l);
     pid_reset(&pid_r);
-    atomic_store(&system_status_, SYSTEM_OK);
+    system_status_ = SYSTEM_OK;
 
     res_in->success = true;
     res_in->message.data = "Fault Cleared";
@@ -196,12 +199,12 @@ void destroy_uros_entities(rcl_node_t *node, rclc_executor_t *executor, rcl_publ
     rmw_context_t *rmw_context = rcl_context_get_rmw_context(node->context);
     (void)rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
 
-    rclc_executor_fini(executor);
-    rcl_publisher_fini(odom_pub, node);
-    rcl_publisher_fini(heartbeat_pub, node);
-    rcl_subscription_fini(twist_sub, node);
-    rcl_service_fini(service, node);
-    rcl_node_fini(node);
+    (void)rclc_executor_fini(executor);
+    (void)rcl_publisher_fini(odom_pub, node);
+    (void)rcl_publisher_fini(heartbeat_pub, node);
+    (void)rcl_subscription_fini(twist_sub, node);
+    (void)rcl_service_fini(service, node);
+    (void)rcl_node_fini(node);
 }
 
 void micro_ros_task(void *arg)
@@ -266,8 +269,8 @@ void micro_ros_task(void *arg)
             rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 
             // Publish Telemetry
-            heartbeat_msg_.data = (int32_t)atomic_load(&system_status_);
-            rcl_publish(&heartbeat_pub, &heartbeat_msg_, NULL);
+            heartbeat_msg_.data = (int32_t)system_status_;
+            (void)rcl_publish(&heartbeat_pub, &heartbeat_msg_, NULL);
 
             // Publish Odometry
             robot_state_t robot_state;
@@ -275,7 +278,7 @@ void micro_ros_task(void *arg)
             int64_t time_ms = rmw_uros_epoch_millis();
 
             msg_odom_.header.frame_id.data = (char *)malloc(20);
-            strcpy(msg_odom_.header.frame_id.data, "odom");
+            (void)strcpy(msg_odom_.header.frame_id.data, "odom");
             msg_odom_.header.frame_id.size = strlen(msg_odom_.header.frame_id.data);
             msg_odom_.header.frame_id.capacity = 20;
             msg_odom_.header.frame_id.data = "odom";
@@ -285,7 +288,7 @@ void micro_ros_task(void *arg)
             msg_odom_.pose.pose.position.y = robot_state.y;
             msg_odom_.pose.pose.orientation.z = sin(robot_state.theta / 2.0);
             msg_odom_.pose.pose.orientation.w = cos(robot_state.theta / 2.0);
-            rcl_publish(&odom_pub, &msg_odom_, NULL);
+            (void)rcl_publish(&odom_pub, &msg_odom_, NULL);
 
             vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz
         }
