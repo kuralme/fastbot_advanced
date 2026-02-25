@@ -57,26 +57,34 @@ reset:
 # 	docker-compose logs -f uros_agent
 
 # --------------- Clang-tidy jobs-------------------------------
-
-TIDY_LOG := tidy_report.txt
 GCC_INTERNAL := $(abspath $(shell xtensa-esp32-elf-gcc -print-file-name=include))
 GCC_NEWLIB := $(abspath $(GCC_INTERNAL)/../../../../../xtensa-esp-elf/include)
+TIDY_ARGS := --extra-arg="-target" --extra-arg="xtensa-esp32-elf" \
+             --extra-arg="-Wno-unknown-argument" \
+			 --extra-arg="-isystem$(GCC_INTERNAL)" \
+			 --extra-arg="-isystem$(GCC_NEWLIB)" \
+			 --extra-arg="-D__IROM_ATTR=" \
+			 --extra-arg="-D__uint32_t=uint32_t" \
+			 --extra-arg="-D__uint16_t=uint16_t" \
+			 --extra-arg="-D__uint8_t=uint8_t"
+TIDY_LOG := tidy_report.txt
 
+LOG ?= 0 # Set to 1 for summary log, 0 for full output
 tidy-check:
-	@echo "--- Starting Clang-Tidy Analysis ---"
-	@clang-tidy -p $(BUILD_DIR) $(MAIN_DIR)/*.c --quiet \
-		--extra-arg="-isystem$(GCC_INTERNAL)" \
-		--extra-arg="-isystem$(GCC_NEWLIB)" \
-		--extra-arg="-D__IROM_ATTR=" \
-		--extra-arg="-D__uint32_t=uint32_t" \
-		--extra-arg="-D__uint16_t=uint16_t" \
-		--extra-arg="-D__uint8_t=uint8_t" > $(TIDY_LOG) 2>&1 || true
-	@echo -n "Total Warnings: "
-	@grep -c "warning:" $(TIDY_LOG) || echo "0"
-	@echo -n "Total Errors:   "
-	@grep -c "error:" $(TIDY_LOG) || echo "0"
-	@echo "--- Full report saved to $(TIDY_LOG) ---"
+	@# Remove GCC-specific flags that Clang hates from the JSON
+	@sed -i 's/-fno-shrink-wrap//g' $(BUILD_DIR)/compile_commands.json
+	@sed -i 's/-fno-tree-switch-conversion//g' $(BUILD_DIR)/compile_commands.json
+	@sed -i 's/-fstrict-volatile-bitfields//g' $(BUILD_DIR)/compile_commands.json
+	@if [ "$(LOG)" = "1" ]; then \
+		echo "--- Running Summary Analysis ---"; \
+		clang-tidy --quiet -p $(BUILD_DIR) $(MAIN_DIR)/*.c $(TIDY_ARGS) > tidy_report.txt 2>&1 || true; \
+		echo -n "Total Warnings: "; grep -c "warning:" tidy_report.txt || echo "0"; \
+		echo -n "Total Errors:   "; grep -c "error:" tidy_report.txt || echo "0"; \
+	else \
+		echo "--- Full Tidy Output ---"; \
+		clang-tidy --quiet -p $(BUILD_DIR) $(MAIN_DIR)/*.c $(TIDY_ARGS); \
+	fi
 
 tidy-fix:
 	@echo "--- Applying Auto-Fixes ---"
-	@clang-tidy -p $(BUILD_DIR) $(EXTRA_ARGS) -fix $(MAIN_DIR)/*.c --quiet
+	@clang-tidy --fix --quiet -p $(BUILD_DIR) $(MAIN_DIR)/*.c $(TIDY_ARGS)

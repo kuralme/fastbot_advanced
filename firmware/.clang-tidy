@@ -5,14 +5,16 @@ Checks: >
   readability-*,
   bugprone-*,
   clang-analyzer-*,
+  misc-*,
+  -misc-include-cleaner,
   -readability-identifier-naming,
-  -readability-function-cognitive-complexity
+  -readability-magic-numbers
 
 HeaderFilterRegex: 'main/.*'
 FormatStyle: none
 WarningsAsErrors: ''
-
-# # Ignore common micro-ROS/FreeRTOS macro noise
-# CheckOptions:
-#   - key: readability-identifier-naming.VariableCase
-#     value: lower_case
+CheckOptions:
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: bugprone-argument-comment.StrictMode
+    value: true
