@@ -9,8 +9,10 @@
 #define UART_CTS (CONFIG_MICROROS_UART_CTS)
 
 // --- micro-ROS Transports ---
-#define UART_BUFFER_SIZE (1024) // default: 512
-#define UART_BAUD_RATE (921600) // default: 115200
+enum {
+UART_BUFFER_SIZE = (1024), // default: 512
+UART_BAUD_RATE = (921600) // default: 115200
+};
 
 bool esp32_serial_open(struct uxrCustomTransport *transport)
 {

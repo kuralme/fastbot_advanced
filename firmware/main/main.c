@@ -50,31 +50,24 @@
             printf("Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
         }                                                                                  \
     }
-#define UROS_TASK_STACK_SIZE 4000
-#define UROS_TASK_PRIORITY 5
+enum
+{
+    UROS_TASK_STACK_SIZE = 4000,
+    UROS_TASK_PRIORITY = 5
+};
 
-rcl_subscription_t twist_sub;
-rcl_publisher_t odom_pub, heartbeat_pub;
-rcl_service_t reset_service;
-geometry_msgs__msg__Twist msg_twist_;
-nav_msgs__msg__Odometry msg_odom_;
-std_msgs__msg__Int32 heartbeat_msg_;
-std_srvs__srv__Trigger_Request ros_old_req;
-std_srvs__srv__Trigger_Response ros_old_res;
 static int64_t last_cmd_time_ = 0;
 static int64_t last_sync_time_ = 0;
-static size_t uart_port = UART_NUM_0;
 #define ROBOT_WHEEL_BASE 0.125F
 #define ROBOT_WHEEL_SEPERATION (ROBOT_WHEEL_BASE / 2.0F)
-#define FRAME_ID "odom"
-#define FRAME_ID_MAX_LEN 32
+enum
+{
+    FRAME_ID_MAX_LEN = 32
+};
 
 PID_t pid_l, pid_r;
-static const float filter_alpha = 0.5F;
-static float filtered_vel_l = 0.0F;
-static float filtered_vel_r = 0.0F;
-static int stall_counter = 0;
 static bool first_cmd_received = false;
+#define FILTER_ALPHA 0.5F
 #define STALL_THRESHOLD_MS 200
 #define STALL_TICKS (STALL_THRESHOLD_MS / 20) // 10 iterations at 50Hz
 #define MIN_SAFE_PWM 50                       // Min PWM should definitely move the robot
@@ -106,14 +99,17 @@ void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
         set_motor_speeds(0, 0);
         return;
     }
+    static int stall_counter = 0;
+    static float filtered_vel_l = 0.0F;
+    static float filtered_vel_r = 0.0F;
 
     robot_state_t state;
     update_robot_state();
     get_robot_state(&state);
 
     // Simple Alpha Filter (0.0 to 1.0) - helps smooth out encoder jitter
-    filtered_vel_l = (filter_alpha * state.vel_l) + (1.0F - filter_alpha) * filtered_vel_l;
-    filtered_vel_r = (filter_alpha * state.vel_r) + (1.0F - filter_alpha) * filtered_vel_r;
+    filtered_vel_l = (FILTER_ALPHA * state.vel_l) + (1.0F - FILTER_ALPHA) * filtered_vel_l;
+    filtered_vel_r = (FILTER_ALPHA * state.vel_r) + (1.0F - FILTER_ALPHA) * filtered_vel_r;
 
     // Watchdog & PID Compute
     int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
@@ -166,7 +162,7 @@ void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
     }
 }
 
-void start_control_loop()
+void controller_init()
 {
     // Initialize Feed-forward PID gains: [Kp, Ki, Kd, Kff]
     pid_init(&pid_l, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
@@ -176,7 +172,7 @@ void start_control_loop()
         .callback = &pid_timer_callback,
         .name = "pid_control_loop"};
 
-    esp_timer_handle_t periodic_timer;
+    esp_timer_handle_t periodic_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 20000)); // 50 Hz (20 ms)
 }
@@ -195,7 +191,6 @@ void reset_service_cb(const void *req __attribute__((unused)), void *res)
 {
     std_srvs__srv__Trigger_Response *res_in = (std_srvs__srv__Trigger_Response *)res;
 
-    stall_counter = 0;
     pid_reset(&pid_l);
     pid_reset(&pid_r);
     system_status_ = SYSTEM_OK;
@@ -226,6 +221,16 @@ void micro_ros_task(void *arg __attribute__((unused)))
     rclc_support_t support;
     rcl_node_t node;
     rclc_executor_t executor;
+
+    rcl_subscription_t twist_sub;
+    rcl_publisher_t odom_pub;
+    rcl_publisher_t heartbeat_pub;
+    rcl_service_t reset_service;
+    geometry_msgs__msg__Twist msg_twist_;
+    nav_msgs__msg__Odometry msg_odom_;
+    std_msgs__msg__Int32 heartbeat_msg_;
+    std_srvs__srv__Trigger_Request ros_old_req;
+    std_srvs__srv__Trigger_Response ros_old_res;
 
     static char odom_frame_buffer[FRAME_ID_MAX_LEN];
     msg_odom_.header.frame_id.data = odom_frame_buffer;
@@ -317,6 +322,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
 void app_main(void)
 {
     // Custom micro-ROS UART transport
+    size_t uart_port = UART_NUM_0;
     rmw_uros_set_custom_transport(
         true,
         (void *)&uart_port,
@@ -336,8 +342,8 @@ void app_main(void)
     configure_motors();
     configure_encoders();
 
-    // On hardware timer for deterministic PID loop
-    start_control_loop();
+    // On hardware timer for determinism
+    controller_init();
 
     xTaskCreatePinnedToCore(
         micro_ros_task,

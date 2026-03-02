@@ -5,13 +5,17 @@ Checks: >
   readability-*,
   bugprone-*,
   clang-analyzer-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  cert-*,
   misc-*,
   -misc-include-cleaner,
   -misc-header-include-cycle,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic
 
 FormatStyle: none
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
 CheckOptions:
   - key: bugprone-argument-comment.StrictMode
     value: true

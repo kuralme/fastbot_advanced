@@ -11,12 +11,16 @@
 
 #define WHEEL_RADIUS 0.0325F // 65mm diameter wheels [m]
 #define WHEEL_BASE 0.125F    // Wheel separation [m]
-#define TICKS_PER_REV 1265   // 4X CPR encoders
+enum {
+TICKS_PER_REV = 1265   // 4X CPR encoders
+};
 
-#define RIGHT_ENC_A 32
-#define RIGHT_ENC_B 33
-#define LEFT_ENC_A 34
-#define LEFT_ENC_B 35
+enum {
+RIGHT_ENC_A = 32,
+RIGHT_ENC_B = 33,
+LEFT_ENC_A = 34,
+LEFT_ENC_B = 35
+};
 #define HALF_DIVISOR 2.0F
 
 static robot_state_t shared_state;
