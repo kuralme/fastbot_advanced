@@ -54,8 +54,6 @@
 
 enum
 {
-    ODF_BUFFER_SIZE = 32,
-
     UROS_TASK_STACK_SIZE = 4000,
     UROS_TASK_PRIORITY = 5,
     UROS_LOOP_HZ = 50,
@@ -84,6 +82,16 @@ typedef enum
 #define MIN_VALID_VEL 0.001F                             // For stall detection
 static const uint64_t kpid_tim_us = CNT_TS * US_PER_SEC; // PID timer in microsec (50Hz)
 
+typedef struct
+{
+    rclc_support_t support;
+    rcl_node_t node;
+    rclc_executor_t executor;
+    rcl_publisher_t odom_pub;
+    rcl_publisher_t heartbeat_pub;
+    rcl_subscription_t twist_sub;
+    rcl_service_t reset_service;
+} uros_entities_t;
 typedef struct
 {
     PID_t pid_l;
@@ -232,27 +240,73 @@ void destroy_uros_entities(rcl_node_t *node, rclc_executor_t *executor, rcl_publ
     (void)rcl_service_fini(service, node);
     (void)rcl_node_fini(node);
 }
+static bool init_uros_entities(uros_entities_t *ent, rcl_allocator_t *alloc,
+                               geometry_msgs__msg__Twist *twist_msg,
+                               std_srvs__srv__Trigger_Request *req,
+                               std_srvs__srv__Trigger_Response *res)
+{
+    if (rclc_support_init(&ent->support, 0, NULL, alloc) != RCL_RET_OK)
+    {
+        return false;
+    }
+    if (rclc_node_init_default(&ent->node, "fastbot_node", "", &ent->support) != RCL_RET_OK)
+    {
+        return false;
+    }
+
+    // Publishers
+    (void)rclc_publisher_init_default(&ent->odom_pub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/fastbot/odom");
+    (void)rclc_publisher_init_default(&ent->heartbeat_pub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/fastbot/heartbeat");
+
+    // Subscriptions & Services
+    (void)rclc_subscription_init_default(&ent->twist_sub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "/fastbot/cmd_vel");
+    (void)rclc_service_init_default(&ent->reset_service, &ent->node, ROSIDL_GET_SRV_TYPE_SUPPORT(std_srvs, srv, Trigger), "/fastbot/reset_fault");
+
+    // Executor
+    if (rclc_executor_init(&ent->executor, &ent->support.context, 2, alloc) != RCL_RET_OK)
+    {
+        return false;
+    }
+    (void)rclc_executor_add_subscription(&ent->executor, &ent->twist_sub, twist_msg, &twist_cb, ON_NEW_DATA);
+    (void)rclc_executor_add_service(&ent->executor, &ent->reset_service, req, res, reset_service_cb);
+
+    return true;
+}
+
+static void publish_telemetry(uros_entities_t *ent, nav_msgs__msg__Odometry *msg_odom, std_msgs__msg__Int32 *msg_hb)
+{
+    robot_state_t state;
+    get_robot_state(&state);
+    int64_t time_ms = rmw_uros_epoch_millis();
+
+    // Heartbeat
+    msg_hb->data = (int32_t)g_bot.status;
+    (void)rcl_publish(&ent->heartbeat_pub, msg_hb, NULL);
+
+    // Odometry
+    msg_odom->header.stamp.sec = (int32_t)(time_ms / MS_PER_SEC);
+    msg_odom->header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
+    msg_odom->pose.pose.position.x = state.x;
+    msg_odom->pose.pose.position.y = state.y;
+    msg_odom->pose.pose.orientation.z = sinf(state.theta / HALF_DIVISOR);
+    msg_odom->pose.pose.orientation.w = cosf(state.theta / HALF_DIVISOR);
+    (void)rcl_publish(&ent->odom_pub, msg_odom, NULL);
+}
 
 void micro_ros_task(void *arg __attribute__((unused)))
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
-    rclc_support_t support;
-    rcl_node_t node;
-    rclc_executor_t executor;
-
-    rcl_subscription_t twist_sub;
-    rcl_publisher_t odom_pub;
-    rcl_publisher_t heartbeat_pub;
-    rcl_service_t reset_service;
+    uros_entities_t uros_ent;
     geometry_msgs__msg__Twist msg_twist_;
     nav_msgs__msg__Odometry msg_odom_;
     std_msgs__msg__Int32 heartbeat_msg_;
-    std_srvs__srv__Trigger_Request ros_old_req;
-    std_srvs__srv__Trigger_Response ros_old_res;
+    std_srvs__srv__Trigger_Request req;
+    std_srvs__srv__Trigger_Response res;
 
-    static char odom_frame_buffer[ODF_BUFFER_SIZE];
-    msg_odom_.header.frame_id.data = odom_frame_buffer;
-    msg_odom_.header.frame_id.capacity = sizeof(odom_frame_buffer);
+    static char odom_frame[] = "odom";
+    msg_odom_.header.frame_id.data = odom_frame;
+    msg_odom_.header.frame_id.size = strlen(odom_frame);
+    msg_odom_.header.frame_id.capacity = sizeof(odom_frame);
 
     static int64_t last_sync_time_ = 0;
     esp_task_wdt_add(NULL); // Subscribe the task to TWDT
@@ -267,22 +321,11 @@ void micro_ros_task(void *arg __attribute__((unused)))
         }
 
         // --- STATE 2: INITIALIZE MICRO-ROS ENTITIES ---
-        RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
-        RCCHECK(rclc_node_init_default(&node, "esp32_controller_node", "", &support));
-
-        RCCHECK(rclc_publisher_init_default(&odom_pub, &node,
-                                            ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/fastbot/odom"));
-        RCCHECK(rclc_publisher_init_default(&heartbeat_pub, &node,
-                                            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/fastbot/heartbeat"));
-        RCCHECK(rclc_subscription_init_default(&twist_sub, &node,
-                                               ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "/fastbot/cmd_vel"));
-        RCCHECK(rclc_service_init_default(&reset_service, &node,
-                                          ROSIDL_GET_SRV_TYPE_SUPPORT(std_srvs, srv, Trigger), "/fastbot/reset_fault"));
-
-        RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
-        RCCHECK(rclc_executor_add_subscription(&executor, &twist_sub, &msg_twist_, &twist_cb, ON_NEW_DATA));
-        RCCHECK(rclc_executor_add_service(&executor, &reset_service, &ros_old_req, &ros_old_res, reset_service_cb));
-
+        if (!init_uros_entities(&uros_ent, &allocator, &msg_twist_, &req, &res))
+        {
+            destroy_uros_entities(&uros_ent.node, &uros_ent.executor, &uros_ent.odom_pub, &uros_ent.heartbeat_pub, &uros_ent.twist_sub, &uros_ent.reset_service);
+            continue;
+        }
         bool initial_sync_done = false;
 
         // --- STATE 3: MAIN LOOP ---
@@ -292,7 +335,8 @@ void micro_ros_task(void *arg __attribute__((unused)))
 
             if (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
             {
-                break; // Connection lost
+                vTaskDelay(pdMS_TO_TICKS(500));
+                continue;
             }
 
             // Handle Time Sync (ESP32-Orange Pi clocks)
@@ -305,36 +349,17 @@ void micro_ros_task(void *arg __attribute__((unused)))
                     initial_sync_done = true;
                 }
             }
+            rclc_executor_spin_some(&uros_ent.executor, RCL_MS_TO_NS(10));
 
-            // Process incoming data
-            rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
-
-            // Publish Telemetry
-            heartbeat_msg_.data = (int32_t)g_bot.status;
-            (void)rcl_publish(&heartbeat_pub, &heartbeat_msg_, NULL);
-
-            // Publish Odometry
-            robot_state_t robot_state;
-            get_robot_state(&robot_state);
-            int64_t time_ms = rmw_uros_epoch_millis();
-
-            // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-            (void)snprintf(msg_odom_.header.frame_id.data, msg_odom_.header.frame_id.capacity, "odom");
-            msg_odom_.header.frame_id.size = strlen(msg_odom_.header.frame_id.data);
-            msg_odom_.header.stamp.sec = (int32_t)(time_ms / MS_PER_SEC);
-            msg_odom_.header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
-            msg_odom_.pose.pose.position.x = robot_state.x;
-            msg_odom_.pose.pose.position.y = robot_state.y;
-            msg_odom_.pose.pose.orientation.z = sinf(robot_state.theta / HALF_DIVISOR);
-            msg_odom_.pose.pose.orientation.w = cosf(robot_state.theta / HALF_DIVISOR);
-            (void)rcl_publish(&odom_pub, &msg_odom_, NULL);
+            // Publish telemetry(Odom + Heartbeat) at 50Hz
+            publish_telemetry(&uros_ent, &msg_odom_, &heartbeat_msg_);
 
             vTaskDelay(pdMS_TO_TICKS(UROS_LOOP_HZ));
         }
 
         // Cleanup before retrying
-        destroy_uros_entities(&node, &executor, &odom_pub, &heartbeat_pub, &twist_sub, &reset_service);
-        rclc_support_fini(&support);
+        destroy_uros_entities(&uros_ent.node, &uros_ent.executor, &uros_ent.odom_pub, &uros_ent.heartbeat_pub, &uros_ent.twist_sub, &uros_ent.reset_service);
+        rclc_support_fini(&uros_ent.support);
     }
 }
 

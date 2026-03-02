@@ -47,41 +47,47 @@ void IRAM_ATTR right_enc_cb()
     (gpio_get_level(RIGHT_ENC_A) != gpio_get_level(RIGHT_ENC_B)) ? g_odom.right_ticks-- : g_odom.right_ticks++;
     portEXIT_CRITICAL_ISR(&g_odom.tick_mux);
 }
-
+static void log_isr_error(esp_err_t err)
+{
+    if (err == ESP_OK || err == ESP_ERR_INVALID_STATE)
+    {
+        return;
+    }
+    ESP_LOGE("ODOM", "ISR service install failed: %d", err);
+}
+static void add_handler(gpio_num_t pin, gpio_isr_t handler)
+{
+    esp_err_t err = gpio_isr_handler_add(pin, handler, NULL);
+    if (err == ESP_OK)
+    {
+        return;
+    }
+    ESP_LOGE("ODOM", "ISR add failed for pin %d", pin);
+}
 void configure_encoders()
 {
     // Configure all encoder GPIOs as inputs without forcing pull-ups here because
     // pins GPIO34/35 are input-only and do NOT have internal pull-up resistors.
-    gpio_config_t io_conf = {
+    const gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_ANYEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = (1ULL << LEFT_ENC_A) | (1ULL << LEFT_ENC_B) | (1ULL << RIGHT_ENC_A) | (1ULL << RIGHT_ENC_B),
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE};
-    gpio_config(&io_conf);
 
     // Enable internal pull-ups only for pins that support them (GPIO0-33)
     // RIGHT_ENC_A/B (GPIO32/33) may use internal pull-ups
     // LEFT_ENC_A/B (GPIO34/35) are input-only pads and require external pull-ups if needed
-    gpio_set_pull_mode(RIGHT_ENC_A, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(RIGHT_ENC_B, GPIO_PULLUP_ONLY);
+    (void)gpio_config(&io_conf);
+    (void)gpio_set_pull_mode(RIGHT_ENC_A, GPIO_PULLUP_ONLY);
+    (void)gpio_set_pull_mode(RIGHT_ENC_B, GPIO_PULLUP_ONLY);
 
-    esp_err_t isr_err = gpio_install_isr_service(0);
-    if (isr_err != ESP_OK && isr_err != ESP_ERR_INVALID_STATE)
-    {
-        ESP_LOGE("ODOM", "gpio_install_isr_service failed: %d", isr_err);
-    }
+    // log_isr_error(gpio_install_isr_service(0));
+    // Install GPIO ISR service with default configuration
+    log_isr_error(gpio_install_isr_service(0));
 
-    esp_err_t isr_enc = gpio_isr_handler_add(LEFT_ENC_A, left_enc_cb, NULL);
-    if (isr_enc != ESP_OK)
-    {
-        ESP_LOGE("ODOM", "Failed to add ISR for LEFT_ENC_A: %d", isr_enc);
-    }
-    isr_enc = gpio_isr_handler_add(RIGHT_ENC_A, right_enc_cb, NULL);
-    if (isr_enc != ESP_OK)
-    {
-        ESP_LOGE("ODOM", "Failed to add ISR for RIGHT_ENC_A: %d", isr_enc);
-    }
+    add_handler(LEFT_ENC_A, left_enc_cb);
+    add_handler(RIGHT_ENC_A, right_enc_cb);
 }
 
 void get_robot_state(robot_state_t *copy)
