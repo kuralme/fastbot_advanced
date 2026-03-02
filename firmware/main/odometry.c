@@ -7,39 +7,45 @@
 #include "esp_attr.h"
 
 #include "odometry.h"
-#include "pid.h"
+#include "common.h"
 
-#define WHEEL_RADIUS 0.0325F // 65mm diameter wheels [m]
-#define WHEEL_BASE 0.125F    // Wheel separation [m]
-enum {
-TICKS_PER_REV = 1265   // 4X CPR encoders
+enum
+{
+    TICKS_PER_REV = 1265, // 4X CPR encoders
+    RIGHT_ENC_A = 32,
+    RIGHT_ENC_B = 33,
+    LEFT_ENC_A = 34,
+    LEFT_ENC_B = 35
 };
 
-enum {
-RIGHT_ENC_A = 32,
-RIGHT_ENC_B = 33,
-LEFT_ENC_A = 34,
-LEFT_ENC_B = 35
-};
-#define HALF_DIVISOR 2.0F
+typedef struct
+{
+    robot_state_t state;       // Shared robot state (pose + velocity)
+    portMUX_TYPE tick_mux;     // For raw encoder ticks
+    portMUX_TYPE state_mux;    // For the calculated pose (x, y, theta)
+    volatile long left_ticks;  // Raw encoder ticks since boot
+    volatile long right_ticks; // Raw encoder ticks since boot
+} odom_manager_t;
 
-static robot_state_t shared_state;
-static portMUX_TYPE tick_isr_spinlock = portMUX_INITIALIZER_UNLOCKED;
-static portMUX_TYPE state_spinlock = portMUX_INITIALIZER_UNLOCKED;
-static volatile long left_tick_count = 0;
-static volatile long right_tick_count = 0;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static odom_manager_t g_odom = {
+    .state = {0},
+    .tick_mux = portMUX_INITIALIZER_UNLOCKED,
+    .state_mux = portMUX_INITIALIZER_UNLOCKED,
+    .left_ticks = 0,
+    .right_ticks = 0};
 
 void IRAM_ATTR left_enc_cb()
 {
-    portENTER_CRITICAL_ISR(&tick_isr_spinlock);
-    (gpio_get_level(LEFT_ENC_A) == gpio_get_level(LEFT_ENC_B)) ? left_tick_count-- : left_tick_count++;
-    portEXIT_CRITICAL_ISR(&tick_isr_spinlock);
+    portENTER_CRITICAL_ISR(&g_odom.tick_mux);
+    (gpio_get_level(LEFT_ENC_A) == gpio_get_level(LEFT_ENC_B)) ? g_odom.left_ticks-- : g_odom.left_ticks++;
+    portEXIT_CRITICAL_ISR(&g_odom.tick_mux);
 }
 void IRAM_ATTR right_enc_cb()
 {
-    portENTER_CRITICAL_ISR(&tick_isr_spinlock);
-    (gpio_get_level(RIGHT_ENC_A) != gpio_get_level(RIGHT_ENC_B)) ? right_tick_count-- : right_tick_count++;
-    portEXIT_CRITICAL_ISR(&tick_isr_spinlock);
+    portENTER_CRITICAL_ISR(&g_odom.tick_mux);
+    (gpio_get_level(RIGHT_ENC_A) != gpio_get_level(RIGHT_ENC_B)) ? g_odom.right_ticks-- : g_odom.right_ticks++;
+    portEXIT_CRITICAL_ISR(&g_odom.tick_mux);
 }
 
 void configure_encoders()
@@ -80,9 +86,9 @@ void configure_encoders()
 
 void get_robot_state(robot_state_t *copy)
 {
-    portENTER_CRITICAL(&state_spinlock);
-    *copy = shared_state; // Thread-safe structural copy
-    portEXIT_CRITICAL(&state_spinlock);
+    portENTER_CRITICAL(&g_odom.state_mux);
+    *copy = g_odom.state; // Thread-safe structural copy
+    portEXIT_CRITICAL(&g_odom.state_mux);
 }
 
 void update_robot_state()
@@ -90,10 +96,10 @@ void update_robot_state()
     static long last_l = 0;
     static long last_r = 0;
 
-    portENTER_CRITICAL(&tick_isr_spinlock);
-    long curr_l = left_tick_count;
-    long curr_r = right_tick_count;
-    portEXIT_CRITICAL(&tick_isr_spinlock);
+    portENTER_CRITICAL(&g_odom.tick_mux);
+    long curr_l = g_odom.left_ticks;
+    long curr_r = g_odom.right_ticks;
+    portEXIT_CRITICAL(&g_odom.tick_mux);
 
     const float meters_per_tick = (2.0F * (float)M_PI * WHEEL_RADIUS) / (float)TICKS_PER_REV;
     float d_l = (float)(curr_l - last_l) * meters_per_tick;
@@ -102,21 +108,25 @@ void update_robot_state()
     float d_dist = (d_r + d_l) / HALF_DIVISOR;
     float d_theta = (d_r - d_l) / WHEEL_BASE;
 
-    float local_vel_l = d_l / PID_TS;
-    float local_vel_r = d_r / PID_TS;
+    float local_vel_l = d_l / CNT_TS;
+    float local_vel_r = d_r / CNT_TS;
+
+    float ma_sin = 0.0F;
+    float ma_cos = 0.0F;
 
     // Update State
-    portENTER_CRITICAL(&state_spinlock);
+    portENTER_CRITICAL(&g_odom.state_mux);
 
     // Heading used for movement calculations is the average of the start and end headings
     // during the interval, which is more accurate for small rotations
-    float move_angle = (float)shared_state.theta + (d_theta / HALF_DIVISOR);
+    float move_angle = g_odom.state.theta + (d_theta / HALF_DIVISOR);
 
-    shared_state.x += d_dist * cosf(move_angle);
-    shared_state.y += d_dist * sinf(move_angle);
-    shared_state.theta += d_theta;
-    shared_state.vel_l = local_vel_l;
-    shared_state.vel_r = local_vel_r;
+    sincosf(move_angle, &ma_sin, &ma_cos);
+    g_odom.state.x += d_dist * ma_cos;
+    g_odom.state.y += d_dist * ma_sin;
+    g_odom.state.theta += d_theta;
+    g_odom.state.vel_l = local_vel_l;
+    g_odom.state.vel_r = local_vel_r;
 
-    portEXIT_CRITICAL(&state_spinlock);
+    portEXIT_CRITICAL(&g_odom.state_mux);
 }

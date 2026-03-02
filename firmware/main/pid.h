@@ -1,7 +1,6 @@
 #ifndef PID_H
 #define PID_H
 
-#define PID_TS 0.02F // 20 ms
 #define PID_INT_LIMIT 50.0F
 #define PID_OUT_MAX 255.0F
 #define PID_OUT_MIN -255.0F

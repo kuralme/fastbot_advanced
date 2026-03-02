@@ -32,6 +32,7 @@
 #include "motor_driver.h"
 #include "odometry.h"
 #include "pid.h"
+#include "common.h"
 
 #define RCCHECK(fn)                                                                      \
     {                                                                                    \
@@ -50,74 +51,84 @@
             printf("Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
         }                                                                                  \
     }
+
 enum
 {
+    ODF_BUFFER_SIZE = 32,
+
     UROS_TASK_STACK_SIZE = 4000,
-    UROS_TASK_PRIORITY = 5
+    UROS_TASK_PRIORITY = 5,
+    UROS_LOOP_HZ = 50,
+
+    STALL_THRESHOLD_MS = 200,
+    MIN_VALID_PWM = 50,
+
+    MS_PER_SEC = 1000,
+    US_PER_SEC = 1000000,
+    NS_PER_MS = 1000000,
+
+    CMD_VEL_TIMEOUT_MS = 300,
+    UROS_AGENT_PING_TIMEOUT_MS = 100,
+    SYNC_TIMEOUT_MS = 30000,
+    WATCHDOG_TIMEOUT_MS = 1000
 };
-
-static int64_t last_cmd_time_ = 0;
-static int64_t last_sync_time_ = 0;
-#define ROBOT_WHEEL_BASE 0.125F
-#define ROBOT_WHEEL_SEPERATION (ROBOT_WHEEL_BASE / 2.0F)
-enum
-{
-    FRAME_ID_MAX_LEN = 32
-};
-
-PID_t pid_l, pid_r;
-static bool first_cmd_received = false;
-#define FILTER_ALPHA 0.5F
-#define STALL_THRESHOLD_MS 200
-#define STALL_TICKS (STALL_THRESHOLD_MS / 20) // 10 iterations at 50Hz
-#define MIN_SAFE_PWM 50                       // Min PWM should definitely move the robot
-#define MIN_VALID_VEL 0.001F                  // For stall detection
-
-#define CMD_VEL_TIMEOUT_MS 300
-#define UROS_AGENT_PING_TIMEOUT_MS 100
-#define SYNC_TIMEOUT_MS 30000
-#define WATCHDOG_TIMEOUT_MS 1000
-
-#define MS_PER_SEC 1000
-#define US_PER_MS 1000
-#define NS_PER_MS 1000000
-#define HALF_DIVISOR 2.0F
-
 typedef enum
 {
     SYSTEM_OK = 0,
     SYSTEM_FAULT_STALL,
     SYSTEM_FAULT_WATCHDOG
-} system_state_t;
-atomic_int system_status_ = ATOMIC_VAR_INIT(SYSTEM_OK);
+};
 
-void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
+#define FILTER_ALPHA 0.5F
+#define STALL_TICKS (STALL_THRESHOLD_MS / 20)            // 10 iterations at 50Hz
+#define MIN_VALID_VEL 0.001F                             // For stall detection
+static const uint64_t kpid_tim_us = CNT_TS * US_PER_SEC; // PID timer in microsec (50Hz)
+
+typedef struct
+{
+    PID_t pid_l;
+    PID_t pid_r;
+    atomic_int status;
+    int64_t last_cmd_time;
+    int stall_counter;
+    bool first_cmd_received;
+    float filtered_vel_l;
+    float filtered_vel_r;
+} robot_manager_t;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static robot_manager_t g_bot = {
+    .status = ATOMIC_VAR_INIT(SYSTEM_OK),
+    .last_cmd_time = 0,
+    .stall_counter = 0,
+    .first_cmd_received = false,
+    .filtered_vel_l = 0.0F,
+    .filtered_vel_r = 0.0F};
+
+void IRAM_ATTR pid_timer_cb(void *arg __attribute__((unused)))
 {
     // Check for faults
-    if (system_status_ != SYSTEM_OK)
+    if (g_bot.status != SYSTEM_OK)
     {
         set_motor_speeds(0, 0);
         return;
     }
-    static int stall_counter = 0;
-    static float filtered_vel_l = 0.0F;
-    static float filtered_vel_r = 0.0F;
 
     robot_state_t state;
     update_robot_state();
     get_robot_state(&state);
 
     // Simple Alpha Filter (0.0 to 1.0) - helps smooth out encoder jitter
-    filtered_vel_l = (FILTER_ALPHA * state.vel_l) + (1.0F - FILTER_ALPHA) * filtered_vel_l;
-    filtered_vel_r = (FILTER_ALPHA * state.vel_r) + (1.0F - FILTER_ALPHA) * filtered_vel_r;
+    g_bot.filtered_vel_l = (FILTER_ALPHA * state.vel_l) + (1.0F - FILTER_ALPHA) * g_bot.filtered_vel_l;
+    g_bot.filtered_vel_r = (FILTER_ALPHA * state.vel_r) + (1.0F - FILTER_ALPHA) * g_bot.filtered_vel_r;
 
     // Watchdog & PID Compute
     int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
-    if (!first_cmd_received)
+    if (!g_bot.first_cmd_received)
     {
-        if (last_cmd_time_ > 0)
+        if (g_bot.last_cmd_time > 0)
         {
-            first_cmd_received = true;
+            g_bot.first_cmd_received = true;
         }
         else
         {
@@ -125,35 +136,35 @@ void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
             return;
         }
     }
-    if (now_ms - last_cmd_time_ > CMD_VEL_TIMEOUT_MS)
+    if (now_ms - g_bot.last_cmd_time > CMD_VEL_TIMEOUT_MS)
     {
         set_motor_speeds(0, 0);
-        pid_reset(&pid_l);
-        pid_reset(&pid_r);
-        // atomic_store(&system_status_, SYSTEM_FAULT_WATCHDOG);
+        pid_reset(&g_bot.pid_l);
+        pid_reset(&g_bot.pid_r);
+        // g_bot.status = SYSTEM_FAULT_WATCHDOG;
     }
     else
     {
-        int out_l = pid_compute(&pid_l, filtered_vel_l);
-        int out_r = pid_compute(&pid_r, filtered_vel_r);
+        int out_l = pid_compute(&g_bot.pid_l, g_bot.filtered_vel_l);
+        int out_r = pid_compute(&g_bot.pid_r, g_bot.filtered_vel_r);
 
         // --- ENCODER SANITY CHECK ---
         // Significant cmd but near-zero movement
-        bool motor_stuck_l = (abs(out_l) > MIN_SAFE_PWM && fabsf(state.vel_l) < MIN_VALID_VEL);
-        bool motor_stuck_r = (abs(out_r) > MIN_SAFE_PWM && fabsf(state.vel_r) < MIN_VALID_VEL);
+        bool motor_stuck = (abs(out_l) > MIN_VALID_PWM && fabsf(state.vel_l) < MIN_VALID_VEL) ||
+                           (abs(out_r) > MIN_VALID_PWM && fabsf(state.vel_r) < MIN_VALID_VEL);
 
-        if (motor_stuck_l || motor_stuck_r)
+        if (motor_stuck)
         {
-            stall_counter++;
+            g_bot.stall_counter++;
         }
         else
         {
-            stall_counter = 0;
+            g_bot.stall_counter = 0;
         }
 
-        if (stall_counter > STALL_TICKS)
+        if (g_bot.stall_counter > STALL_TICKS)
         {
-            system_status_ = SYSTEM_FAULT_STALL;
+            g_bot.status = SYSTEM_FAULT_STALL;
             set_motor_speeds(0, 0);
             return;
         }
@@ -162,38 +173,45 @@ void IRAM_ATTR pid_timer_callback(void *arg __attribute__((unused)))
     }
 }
 
-void controller_init()
+void controller_init(void)
 {
     // Initialize Feed-forward PID gains: [Kp, Ki, Kd, Kff]
-    pid_init(&pid_l, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
-    pid_init(&pid_r, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
+    pid_init(&g_bot.pid_l, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
+    pid_init(&g_bot.pid_r, (PID_t){.kp = PID_KP_DEFAULT, .ki = PID_KI_DEFAULT, .kd = PID_KD_DEFAULT, .kff = PID_KFF_DEFAULT});
 
     const esp_timer_create_args_t periodic_timer_args = {
-        .callback = &pid_timer_callback,
+        .callback = &pid_timer_cb,
         .name = "pid_control_loop"};
 
     esp_timer_handle_t periodic_timer = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, 20000)); // 50 Hz (20 ms)
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, kpid_tim_us));
 }
 
 void twist_cb(const void *msgin)
 {
-    last_cmd_time_ = esp_timer_get_time() / MS_PER_SEC;
+    g_bot.last_cmd_time = esp_timer_get_time() / MS_PER_SEC;
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
 
     // Target wheel speeds in m/s
-    pid_l.setpoint = (float)msg->linear.x - ((float)msg->angular.z * ROBOT_WHEEL_SEPERATION);
-    pid_r.setpoint = (float)msg->linear.x + ((float)msg->angular.z * ROBOT_WHEEL_SEPERATION);
+    g_bot.pid_l.setpoint = (float)msg->linear.x - ((float)msg->angular.z * WHEEL_SEPERATION);
+    g_bot.pid_r.setpoint = (float)msg->linear.x + ((float)msg->angular.z * WHEEL_SEPERATION);
 }
 
+void reset_robot_manager(void)
+{
+    g_bot.stall_counter = 0;
+    g_bot.first_cmd_received = false;
+    g_bot.last_cmd_time = 0;
+    g_bot.status = SYSTEM_OK;
+    pid_reset(&g_bot.pid_l);
+    pid_reset(&g_bot.pid_r);
+}
 void reset_service_cb(const void *req __attribute__((unused)), void *res)
 {
     std_srvs__srv__Trigger_Response *res_in = (std_srvs__srv__Trigger_Response *)res;
 
-    pid_reset(&pid_l);
-    pid_reset(&pid_r);
-    system_status_ = SYSTEM_OK;
+    reset_robot_manager();
 
     res_in->success = true;
     res_in->message.data = "Fault Cleared";
@@ -232,10 +250,11 @@ void micro_ros_task(void *arg __attribute__((unused)))
     std_srvs__srv__Trigger_Request ros_old_req;
     std_srvs__srv__Trigger_Response ros_old_res;
 
-    static char odom_frame_buffer[FRAME_ID_MAX_LEN];
+    static char odom_frame_buffer[ODF_BUFFER_SIZE];
     msg_odom_.header.frame_id.data = odom_frame_buffer;
     msg_odom_.header.frame_id.capacity = sizeof(odom_frame_buffer);
 
+    static int64_t last_sync_time_ = 0;
     esp_task_wdt_add(NULL); // Subscribe the task to TWDT
 
     while (1)
@@ -264,9 +283,9 @@ void micro_ros_task(void *arg __attribute__((unused)))
         RCCHECK(rclc_executor_add_subscription(&executor, &twist_sub, &msg_twist_, &twist_cb, ON_NEW_DATA));
         RCCHECK(rclc_executor_add_service(&executor, &reset_service, &ros_old_req, &ros_old_res, reset_service_cb));
 
-        // --- STATE 3: MAIN LOOP ---
         bool initial_sync_done = false;
 
+        // --- STATE 3: MAIN LOOP ---
         while (1)
         {
             esp_task_wdt_reset();
@@ -291,7 +310,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
             rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
 
             // Publish Telemetry
-            heartbeat_msg_.data = (int32_t)system_status_;
+            heartbeat_msg_.data = (int32_t)g_bot.status;
             (void)rcl_publish(&heartbeat_pub, &heartbeat_msg_, NULL);
 
             // Publish Odometry
@@ -306,11 +325,11 @@ void micro_ros_task(void *arg __attribute__((unused)))
             msg_odom_.header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
             msg_odom_.pose.pose.position.x = robot_state.x;
             msg_odom_.pose.pose.position.y = robot_state.y;
-            msg_odom_.pose.pose.orientation.z = sin(robot_state.theta / HALF_DIVISOR);
-            msg_odom_.pose.pose.orientation.w = cos(robot_state.theta / HALF_DIVISOR);
+            msg_odom_.pose.pose.orientation.z = sinf(robot_state.theta / HALF_DIVISOR);
+            msg_odom_.pose.pose.orientation.w = cosf(robot_state.theta / HALF_DIVISOR);
             (void)rcl_publish(&odom_pub, &msg_odom_, NULL);
 
-            vTaskDelay(pdMS_TO_TICKS(50)); // 20Hz
+            vTaskDelay(pdMS_TO_TICKS(UROS_LOOP_HZ));
         }
 
         // Cleanup before retrying

@@ -1,21 +1,21 @@
 #include "motor_driver.h"
 
-enum {
-LEFT_MOTOR_FORWARD_GPIO = 25,
-LEFT_MOTOR_BACKWARD_GPIO = 26,
-RIGHT_MOTOR_FORWARD_GPIO = 27,
-RIGHT_MOTOR_BACKWARD_GPIO = 14
-};
-
 #define L_F_CH LEDC_CHANNEL_0
 #define L_B_CH LEDC_CHANNEL_1
 #define R_F_CH LEDC_CHANNEL_2
 #define R_B_CH LEDC_CHANNEL_3
 
-enum {
-TIM_FREQ_HZ = 5000,
-MOTOR_DEADZONE = 45,
-PWM_MAX_DUTY = ((1 << 8) - 1) // 255
+enum
+{
+    LEFT_MOTOR_FORWARD_GPIO = 25,
+    LEFT_MOTOR_BACKWARD_GPIO = 26,
+    RIGHT_MOTOR_FORWARD_GPIO = 27,
+    RIGHT_MOTOR_BACKWARD_GPIO = 14,
+
+    TIM_FREQ_HZ = 5000,
+    MOTOR_DEADZONE = 45,
+    PWM_MAX_DUTY = ((1 << 8) - 1) // 255
+
 };
 
 static inline int clamp_spd(int vel, int min, int max)

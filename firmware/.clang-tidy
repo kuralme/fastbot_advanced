@@ -12,7 +12,6 @@ Checks: >
   -misc-include-cleaner,
   -misc-header-include-cycle,
   -readability-function-cognitive-complexity,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic
 
 FormatStyle: none
 WarningsAsErrors: '*'

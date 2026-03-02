@@ -1,4 +1,5 @@
 #include "pid.h"
+#include "common.h"
 
 void pid_init(PID_t *pid, PID_t config)
 {
@@ -24,7 +25,7 @@ int pid_compute(PID_t *pid, float measured)
 
     float feed_forward = pid->setpoint * pid->kff;
 
-    pid->integral += error * PID_TS;
+    pid->integral += error * CNT_TS;
     if (pid->integral > PID_INT_LIMIT)
     {
         pid->integral = PID_INT_LIMIT;
@@ -33,7 +34,7 @@ int pid_compute(PID_t *pid, float measured)
     {
         pid->integral = -PID_INT_LIMIT;
     }
-    float derivative = (error - pid->prev_error) / PID_TS;
+    float derivative = (error - pid->prev_error) / CNT_TS;
     pid->prev_error = error;
 
     // Combine terms FF + PID
