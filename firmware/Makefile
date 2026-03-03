@@ -1,8 +1,8 @@
 # Configuration
 PORT ?= /dev/ttyUSB0
 BAUD = 115200
-BUILD_DIR := ./build
-MAIN_DIR := ./main
+BUILD_DIR := build
+MAIN_DIR := main
 COMPILE_DB := $(BUILD_DIR)/compile_commands.json
 
 # Targets
@@ -56,7 +56,7 @@ reset:
 # agent-logs:
 # 	docker-compose logs -f uros_agent
 
-# --------------- Clang-tidy jobs-------------------------------
+# --------------- Static Analysis Jobs -------------------------------
 GCC_INTERNAL := $(abspath $(shell xtensa-esp32-elf-gcc -print-file-name=include))
 GCC_NEWLIB := $(abspath $(GCC_INTERNAL)/../../../../../xtensa-esp-elf/include)
 TIDY_ARGS := --extra-arg="-target" --extra-arg="xtensa-esp32-elf" \
@@ -68,13 +68,17 @@ TIDY_ARGS := --extra-arg="-target" --extra-arg="xtensa-esp32-elf" \
 			 --extra-arg="-D__uint16_t=uint16_t" \
 			 --extra-arg="-D__uint8_t=uint8_t"
 TIDY_LOG := tidy_report.txt
-
 LOG ?= 0 # Set to 1 for summary log, 0 for full output
-tidy-check:
-	@# Remove GCC-specific flags that Clang hates from the JSON
-	@sed -i 's/-fno-shrink-wrap//g' $(BUILD_DIR)/compile_commands.json
-	@sed -i 's/-fno-tree-switch-conversion//g' $(BUILD_DIR)/compile_commands.json
-	@sed -i 's/-fstrict-volatile-bitfields//g' $(BUILD_DIR)/compile_commands.json
+
+# Prepare the compilation database
+prep-db:
+	@echo "--- Cleaning up compile_commands.json ---"
+	@sed -i 's/-fno-shrink-wrap//g' $(COMPILE_DB)
+	@sed -i 's/-fno-tree-switch-conversion//g' $(COMPILE_DB)
+	@sed -i 's/-fstrict-volatile-bitfields//g' $(COMPILE_DB)
+
+tidy-check: prep-db
+	@echo "--- Running Clang-Tidy ---"
 	@if [ "$(LOG)" = "1" ]; then \
 		echo "--- Running Summary Analysis ---"; \
 		clang-tidy --quiet -p $(BUILD_DIR) $(MAIN_DIR)/*.c $(TIDY_ARGS) > tidy_report.txt 2>&1 || true; \
@@ -88,3 +92,19 @@ tidy-check:
 tidy-fix:
 	@echo "--- Applying Auto-Fixes ---"
 	@clang-tidy --fix --quiet -p $(BUILD_DIR) $(MAIN_DIR)/*.c $(TIDY_ARGS)
+
+cppcheck: prep-db
+	@echo "--- Running Cppcheck ---"
+	@cppcheck --project=$(COMPILE_DB) \
+         --enable=all \
+         --inline-suppr \
+         --std=c11 \
+         --suppress=missingIncludeSystem \
+         --suppress=unusedFunction \
+         --suppress=*:*esp-idf* \
+         --suppress=*:*components* \
+         --file-filter=$(MAIN_DIR)/* \
+         --error-exitcode=1
+
+lint: tidy-check cppcheck
+	@echo "--- All static analysis passed! ---"

@@ -43,8 +43,8 @@ void configure_motors(void)
     };
     ledc_timer_config(&ledc_timer);
 
-    int pins[] = {LEFT_MOTOR_FORWARD_GPIO, LEFT_MOTOR_BACKWARD_GPIO, RIGHT_MOTOR_FORWARD_GPIO, RIGHT_MOTOR_BACKWARD_GPIO};
-    int channels[] = {L_F_CH, L_B_CH, R_F_CH, R_B_CH};
+    static const int pins[] = {LEFT_MOTOR_FORWARD_GPIO, LEFT_MOTOR_BACKWARD_GPIO, RIGHT_MOTOR_FORWARD_GPIO, RIGHT_MOTOR_BACKWARD_GPIO};
+    static const int channels[] = {L_F_CH, L_B_CH, R_F_CH, R_B_CH};
 
     // Configure LEDC channels
     for (int i = 0; i < 4; i++)

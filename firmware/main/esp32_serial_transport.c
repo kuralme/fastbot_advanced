@@ -9,14 +9,15 @@
 #define UART_CTS (CONFIG_MICROROS_UART_CTS)
 
 // --- micro-ROS Transports ---
-enum {
-UART_BUFFER_SIZE = (1024), // default: 512
-UART_BAUD_RATE = (921600) // default: 115200
+enum
+{
+    UART_BUFFER_SIZE = (1024), // default: 512
+    UART_BAUD_RATE = (921600)  // default: 115200
 };
 
 bool esp32_serial_open(struct uxrCustomTransport *transport)
 {
-    size_t *uart_port = (size_t *)transport->args;
+    const size_t *uart_port = (const size_t *)transport->args;
 
     uart_config_t uart_config = {
         .baud_rate = UART_BAUD_RATE,
@@ -44,20 +45,20 @@ bool esp32_serial_open(struct uxrCustomTransport *transport)
 
 bool esp32_serial_close(struct uxrCustomTransport *transport)
 {
-    size_t *uart_port = (size_t *)transport->args;
+    const size_t *uart_port = (const size_t *)transport->args;
     return uart_driver_delete(*uart_port) == ESP_OK;
 }
 
 size_t esp32_serial_write(struct uxrCustomTransport *transport, const uint8_t *buf, size_t len, uint8_t *err __attribute__((unused)))
 {
-    size_t *uart_port = (size_t *)transport->args;
+    const size_t *uart_port = (const size_t *)transport->args;
     const int txBytes = uart_write_bytes(*uart_port, (const char *)buf, len);
     return txBytes;
 }
 
 size_t esp32_serial_read(struct uxrCustomTransport *transport, uint8_t *buf, size_t len, int timeout, uint8_t *err __attribute__((unused)))
 {
-    size_t *uart_port = (size_t *)transport->args;
+    const size_t *uart_port = (const size_t *)transport->args;
     const int rxBytes = uart_read_bytes(*uart_port, buf, len, timeout / portTICK_PERIOD_MS);
     return rxBytes;
 }
