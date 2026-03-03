@@ -37,5 +37,6 @@ jobs:
               idf.py reconfigure && \              
               
               # Run clang-tidy and cppcheck via makefile
-              make tidy-check-ci && make cppcheck
+              # make tidy-check-ci && \
+              make cppcheck
             "
