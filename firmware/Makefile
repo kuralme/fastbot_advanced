@@ -72,10 +72,17 @@ LOG ?= 0 # Set to 1 for summary log, 0 for full output
 
 # Prepare the compilation database
 prep-db:
-	@echo "--- Cleaning up compile_commands.json ---"
+	@echo "--- Cleaning up compile_commands.json for Clang ---"
+	@# Remove GCC/Xtensa specific flags that Clang-Tidy doesn't recognize
 	@sed -i 's/-fno-shrink-wrap//g' $(COMPILE_DB)
 	@sed -i 's/-fno-tree-switch-conversion//g' $(COMPILE_DB)
 	@sed -i 's/-fstrict-volatile-bitfields//g' $(COMPILE_DB)
+	@sed -i 's/-mlongcalls//g' $(COMPILE_DB)
+	@sed -i 's/-mlong-calls//g' $(COMPILE_DB)
+	@sed -i 's/--target=xtensa-esp32[a-z0-9-]*//g' $(COMPILE_DB)
+	@sed -i 's/-target xtensa-esp32[a-z0-9-]*//g' $(COMPILE_DB)
+	@sed -i 's/xtensa-esp32-unknown-elf/riscv32/g' $(COMPILE_DB)
+
 
 tidy-check: prep-db
 	@echo "--- Running Clang-Tidy ---"
