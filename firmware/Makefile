@@ -69,12 +69,15 @@ TIDY_ARGS := --extra-arg="-target" --extra-arg="xtensa-esp32-elf" \
 			 --extra-arg="-D__uint8_t=uint8_t"
 
 GCC_LIB_CI := $(shell find /opt/esp/tools/xtensa-esp32-elf -name "include" -type d | grep "gcc" | head -n 1)
-NEWLIB_CI  := /opt/esp/tools/xtensa-esp32-elf/opt/xtensa-esp32-elf/xtensa-esp32-elf/sys-include
+TOOLCHAIN_CI := /opt/esp/tools/xtensa-esp32-elf/opt/xtensa-esp32-elf/xtensa-esp32-elf
 TIDY_ARGS_CI := --extra-arg="--target=riscv32" \
-				--extra-arg="-isystem$(GCC_LIB_CI)" \
-				--extra-arg="-isystem$(NEWLIB_CI)" \
-				--extra-arg="-D__IROM_ATTR=" \
-				--extra-arg="-D__attribute__(x)="
+                --extra-arg="-Wno-unknown-argument" \
+                --extra-arg="-isystem$(GCC_LIB_CI)" \
+                --extra-arg="-isystem$(TOOLCHAIN_CI)/include" \
+                --extra-arg="-isystem$(TOOLCHAIN_CI)/sys-include" \
+                --extra-arg="-D__IROM_ATTR=" \
+                --extra-arg="-D__extension__=" \
+                --extra-arg="-D__gnuc_va_list=void*"
 
 TIDY_LOG := tidy_report.txt
 LOG ?= 0 # Set to 1 for summary log, 0 for full output
@@ -89,14 +92,13 @@ prep-db:
 
 prep-db-ci:
 	@echo "--- Cleaning up compile_commands.json for Clang ---"
-	@# Remove GCC/Xtensa specific flags that Clang-Tidy doesn't recognize
-	@sed -i 's|/.*/xtensa-esp32-elf-gcc|cc|g' build/compile_commands.json
-	@sed -i 's|/.*/xtensa-esp32-elf-g++|c++|g' build/compile_commands.json
+	@sed -i 's|".*/xtensa-esp32-elf-gcc"|"cc"|g' build/compile_commands.json
+	@sed -i 's|".*/xtensa-esp32-elf-g++"|"c++"|g' build/compile_commands.json
 	@sed -i 's/-fno-shrink-wrap//g' build/compile_commands.json
 	@sed -i 's/-fno-tree-switch-conversion//g' build/compile_commands.json
 	@sed -i 's/-fstrict-volatile-bitfields//g' build/compile_commands.json
 	@sed -i 's/-mlongcalls//g' build/compile_commands.json
-
+	
 tidy-check: prep-db
 	@echo "--- Running Clang-Tidy ---"
 	@if [ "$(LOG)" = "1" ]; then \

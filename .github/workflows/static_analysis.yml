@@ -30,10 +30,11 @@ jobs:
               mkdir -p components/micro_ros_espidf_component/include && \
               mv components/micro_ros_espidf_component/CMakeLists.txt components/micro_ros_espidf_component/CMakeLists.txt.bak && \
               echo 'idf_component_register(INCLUDE_DIRS \"include\")' > components/micro_ros_espidf_component/CMakeLists.txt && \
+              mkdir -p components/micro_ros_espidf_component/include/uxr/client/
+              touch components/micro_ros_espidf_component/include/uxr/client/transport.h
               
               . /opt/esp/idf/export.sh && \
-              idf.py reconfigure && \
-              
+              idf.py reconfigure && \              
               
               # Run clang-tidy and cppcheck via makefile
               make tidy-check-ci && make cppcheck

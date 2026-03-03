@@ -67,6 +67,7 @@ enum
 
     CMD_VEL_TIMEOUT_MS = 300,
     UROS_AGENT_PING_TIMEOUT_MS = 100,
+    UROS_SPIN_TIMEOUT_MS = 10,
     SYNC_TIMEOUT_MS = 30000,
     WATCHDOG_TIMEOUT_MS = 1000
 };
@@ -349,7 +350,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
                     initial_sync_done = true;
                 }
             }
-            rclc_executor_spin_some(&uros_ent.executor, RCL_MS_TO_NS(10));
+            rclc_executor_spin_some(&uros_ent.executor, RCL_MS_TO_NS(UROS_SPIN_TIMEOUT_MS));
 
             // Publish telemetry(Odom + Heartbeat) at 50Hz
             publish_telemetry(&uros_ent, &msg_odom_, &heartbeat_msg_);

@@ -17,3 +17,7 @@ WarningsAsErrors: '*'
 CheckOptions:
   - key: bugprone-argument-comment.StrictMode
     value: true
+  - key: bugprone-branch-clone.SuppressDirectives
+    value: true
+  - key: readability-magic-numbers.IgnorePowersOf2IntegerValues
+    value: true
