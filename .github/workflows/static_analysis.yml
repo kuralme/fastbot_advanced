@@ -22,21 +22,18 @@ jobs:
             -w "/app/firmware" \
             espressif/idf:v5.5.2 \
             /bin/bash -c "
-              # Fix Git safety
+              # Fix Git safety and install tools
               git config --global --add safe.directory '*' && \
-              
-              # Install tools inside the container
               apt-get update && apt-get install -y cppcheck clang-tidy && \
               
-              # Mock micro-ROS (prevents colcon/git clone errors)
-              mkdir -p components/micro_ros_espidf_component/micro_ros_dev/install && \
-              touch components/micro_ros_espidf_component/libmicroros.a && \
-              mkdir -p components/micro_ros_espidf_component/include && \
+              # Rename the real CMakeLists to hide it and create dummy component
+              mv components/micro_ros_espidf_component/CMakeLists.txt components/micro_ros_espidf_component/CMakeLists.txt.bak && \
+              echo 'idf_component_register(INCLUDE_DIRS \"include\")' > components/micro_ros_espidf_component/CMakeLists.txt && \
               
               # Generate the Compilation Database
               . /opt/esp/idf/export.sh && \
               idf.py reconfigure && \
               
-              # Run Makefile linting logic
+              # Run linting logic
               make lint
             "
