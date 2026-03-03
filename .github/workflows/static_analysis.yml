@@ -1,0 +1,36 @@
+name: Firmware Static Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  esp32-analysis:
+    name: ESP32 Firmware Check
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.2
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Analysis Tools
+        run: |
+          apt-get update
+          apt-get install -y cppcheck clang-tidy
+
+      - name: Build Compilation Database
+        working-directory: ./firmware
+        run: |
+          # Source the IDF environment to make idf.py available
+          . $IDF_PATH/export.sh
+          idf.py reconfigure
+
+      - name: Run Linting Suite
+        working-directory: ./firmware
+        run: |
+          # Source environment so xtensa-esp32-elf-gcc is found by Makefile
+          . $IDF_PATH/export.sh
+          make lint
