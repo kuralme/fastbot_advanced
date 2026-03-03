@@ -1,5 +1,7 @@
 # Fastbot Advanced: Mixed-Criticality Autonomous Robot
 
+[![Firmware Static Analysis](https://github.com/kuralme/fastbot_advanced/actions/workflows/static_analysis.yml/badge.svg)](https://github.com/kuralme/fastbot_advanced/actions/workflows/static_analysis.yml)
+
 This project focuses on the development of a differential drive robot - Fastbot, with a criticality in mind. The system is designed with lower/higher level architectures, utilizing an **ESP32** for hard real-time motion control and safety, and an **Orange Pi 5B (OPi)** for high-level SLAM and Nonlinear Model Predictive Control (NMPC).
 
 ## 🚀 Project Goals
