@@ -31,10 +31,12 @@ jobs:
               mv components/micro_ros_espidf_component/CMakeLists.txt components/micro_ros_espidf_component/CMakeLists.txt.bak && \
               echo 'idf_component_register(INCLUDE_DIRS \"include\")' > components/micro_ros_espidf_component/CMakeLists.txt && \
               
-              # Generate the Compilation Database
               . /opt/esp/idf/export.sh && \
               idf.py reconfigure && \
               
-              # Run linting logic
-              make lint
+              # Run official IDF wrapper for clang-tidy
+              idf.py clang-tidy --check-files 'main/*.c' && \
+              
+              # Run cppcheck via your makefile
+              make cppcheck
             "
