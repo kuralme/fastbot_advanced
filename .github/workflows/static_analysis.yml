@@ -20,11 +20,19 @@ jobs:
         run: |
           apt-get update
           apt-get install -y cppcheck clang-tidy
-
-      - name: Build Compilation Database
+          
+      - name: Mock micro-ROS for Analysis
         working-directory: ./firmware
         run: |
-          # Source the IDF environment to make idf.py available
+          mkdir -p components/micro_ros_espidf_component/build
+          touch components/micro_ros_espidf_component/libmicroros.a
+          mkdir -p components/micro_ros_espidf_component/include
+          
+      - name: Build Compilation Database          
+        working-directory: ./firmware
+        run: |
+          # Fix ownership
+          git config --global --add safe.directory /__w/fastbot_advanced/fastbot_advanced
           . $IDF_PATH/export.sh
           idf.py reconfigure
 
