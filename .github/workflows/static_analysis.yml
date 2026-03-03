@@ -24,9 +24,10 @@ jobs:
       - name: Mock micro-ROS for Analysis
         working-directory: ./firmware
         run: |
-          mkdir -p components/micro_ros_espidf_component/build
-          touch components/micro_ros_espidf_component/libmicroros.a
+          mkdir -p components/micro_ros_espidf_component/micro_ros_dev/install
           mkdir -p components/micro_ros_espidf_component/include
+          touch components/micro_ros_espidf_component/libmicroros.a
+          echo "MOCKED" > components/micro_ros_espidf_component/micro_ros_dev/install/COLCON_IGNORE
           
       - name: Build Compilation Database          
         working-directory: ./firmware
