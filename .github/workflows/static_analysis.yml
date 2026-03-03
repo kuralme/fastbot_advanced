@@ -35,7 +35,7 @@ jobs:
               idf.py reconfigure && \
               
               # Run official IDF wrapper for clang-tidy
-              idf.py clang-tidy --check-files 'main/*.c' && \
+              idf.py clang-tidy main/*.c && \
               
               # Run cppcheck via your makefile
               make cppcheck
