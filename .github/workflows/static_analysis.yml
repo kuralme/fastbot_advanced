@@ -34,9 +34,7 @@ jobs:
               . /opt/esp/idf/export.sh && \
               idf.py reconfigure && \
               
-              # Run official IDF wrapper for clang-tidy
-              idf.py clang-tidy main/*.c && \
               
-              # Run cppcheck via your makefile
-              make cppcheck
+              # Run clang-tidy and cppcheck via makefile
+              make tidy-check-ci && make cppcheck
             "
