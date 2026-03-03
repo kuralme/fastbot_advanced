@@ -27,6 +27,7 @@ jobs:
               apt-get update && apt-get install -y cppcheck clang-tidy && \
               
               # Rename the real CMakeLists to hide it and create dummy component
+              mkdir -p components/micro_ros_espidf_component/include && \
               mv components/micro_ros_espidf_component/CMakeLists.txt components/micro_ros_espidf_component/CMakeLists.txt.bak && \
               echo 'idf_component_register(INCLUDE_DIRS \"include\")' > components/micro_ros_espidf_component/CMakeLists.txt && \
               
