@@ -15,27 +15,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Analysis in Docker
+      - name: Run Firmware Linting in Docker
         run: |
           docker run --rm \
-            -v "${{ github.workspace }}:/app" \
+            -v "${{ github.workspace }}/firmware:/app" \
             -w "/app/firmware" \
             espressif/idf:v5.5.2 \
             /bin/bash -c "
               # Fix Git safety and install tools
               git config --global --add safe.directory '*' && \
               apt-get update && apt-get install -y cppcheck clang-tidy && \
+              pip install colcon-common-extensions catkin_pkg lark && \
               
-              # Rename the real CMakeLists to hide it and create dummy component
-              mkdir -p components/micro_ros_espidf_component/include && \
-              mv components/micro_ros_espidf_component/CMakeLists.txt components/micro_ros_espidf_component/CMakeLists.txt.bak && \
-              echo 'idf_component_register(INCLUDE_DIRS "include")' > components/micro_ros_espidf_component/CMakeLists.txt && \
-              mkdir -p components/micro_ros_espidf_component/include/uxr/client/
-              touch components/micro_ros_espidf_component/include/uxr/client/transport.h
+              # Build the project to generate compile_commands.json
+              idf.py build && \
               
-              . /opt/esp/idf/export.sh && idf.py reconfigure && \            
-              
-              # Run clang-tidy and cppcheck via makefile
-              # make tidy-check-ci && \
-              make cppcheck
+              # Run linting via Makefile
+              make tidy-check-ci && make cppcheck
             "
