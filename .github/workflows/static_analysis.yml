@@ -18,7 +18,7 @@ jobs:
       - name: Run Firmware Linting in Docker
         run: |
           docker run --rm \
-            -v "${{ github.workspace }}/firmware:/app" \
+            -v "${{ github.workspace }}/firmware:/app/firmware" \
             -w "/app/firmware" \
             espressif/idf:v5.5.2 \
             /bin/bash -c "
