@@ -37,6 +37,7 @@ clean:
 	rm -rf ./components/micro_ros_espidf_component/micro_ros_src
 	rm -rf ./components/micro_ros_espidf_component/libmicroros.a
 	rm -rf ./components/micro_ros_espidf_component/include
+	rm -rf ./components/micro_ros_espidf_component/esp32_toolchain.cmake
 	@echo "Clean finished."
 
 # Full reset: Clean rebuild, flash, and start agent
