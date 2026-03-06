@@ -14,7 +14,7 @@ services:
   fastbot-ros2-slam:
     build:
         context: ..
-        dockerfile: docker/dockerfile-ros2-slam
+        dockerfile: docker/dockerfile.slam
     image: fastbot-ros2-slam
     container_name: fastbot-ros2-slam
     privileged: true
@@ -31,7 +31,7 @@ services:
   fastbot-imu-driver:
     build:
         context: ..
-        dockerfile: docker/dockerfile-ros2-imu
+        dockerfile: docker/dockerfile.imu
     container_name: fastbot-imu-driver
     network_mode: host
     privileged: true
