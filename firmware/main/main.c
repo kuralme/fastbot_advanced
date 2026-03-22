@@ -69,7 +69,7 @@ enum
     UROS_AGENT_PING_TIMEOUT_MS = 100,
     UROS_SPIN_TIMEOUT_MS = 10,
     SYNC_TIMEOUT_MS = 30000,
-    WATCHDOG_TIMEOUT_MS = 1000
+    WATCHDOG_TIMEOUT_MS = 5000
 };
 typedef enum
 {
@@ -367,7 +367,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
 void app_main(void)
 {
     // Custom micro-ROS UART transport
-    size_t uart_port = UART_NUM_0;
+    static size_t uart_port = UART_NUM_0;
     rmw_uros_set_custom_transport(
         true,
         (void *)&uart_port,

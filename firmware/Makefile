@@ -1,6 +1,6 @@
 # Configuration
 PORT ?= /dev/ttyUSB0
-BAUD = 115200
+BAUD = 921600
 BUILD_DIR := build
 MAIN_DIR := main
 COMPILE_DB := $(BUILD_DIR)/compile_commands.json
@@ -40,8 +40,8 @@ clean:
 	rm -rf ./components/micro_ros_espidf_component/esp32_toolchain.cmake
 	@echo "Clean finished."
 
-# Full reset: Clean rebuild, flash, and start agent
-fresh: clean build flash up
+# Full reset: Clean rebuild, flash
+fresh: clean build flash
 
 # Extra - Helper: Reset the ESP32 via Serial DTR
 reset:
