@@ -6,7 +6,7 @@ This project focuses on the development of a differential drive robot - Fastbot,
 
 ## 🚀 Project Goals
 
-* **Mixed-Criticality Execution:** Separating safety-critical tasks (Tier 1) from computationally intensive navigation (Tier 2).
+* **Mixed-Criticality Execution:** Separating safety-critical tasks (Tier 1) from computationally intensive SLAM (Tier 2).
 * **Deterministic Motion Control:** Ensuring the PID loop and safety monitors are never interrupted by communication overhead.
 * **System Reliability:** Self-healing communication loops and latching hardware fault states.
 * **Advanced Navigation:** Implementing *Stella-SLAM* for visual localization and high-level trajectory control on a high-performance Linux environment.
@@ -16,7 +16,7 @@ This project focuses on the development of a differential drive robot - Fastbot,
 
 ## System Architecture
 
-The project is organized as a monorepo containing both the low-level firmware and the high-level ROS 2 navigation stack.
+The project is organized as a monorepo containing both the low-level firmware and the high-level ROS2 SLAM stack.
 
 ### 1. 🦾 Firmware (ESP32 - Tier 1: High Criticality)
 
