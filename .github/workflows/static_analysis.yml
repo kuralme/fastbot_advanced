@@ -3,8 +3,12 @@ name: Firmware Static Analysis
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'firmware/**'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'firmware/**'
 
 jobs:
   esp32-analysis:
@@ -28,7 +32,7 @@ jobs:
               pip install colcon-common-extensions catkin_pkg lark && \
               
               # Build the project to generate compile_commands.json
-              idf.py build && \
+              idf.py reconfigure && \
               
               # Run linting via Makefile
               make tidy-check-ci && make cppcheck
