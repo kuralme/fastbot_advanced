@@ -89,11 +89,12 @@ LOG ?= 0 # Set to 1 for summary log, 0 for full output
 
 # Remove GCC/Xtensa specific flags that Clang-Tidy doesn't recognize
 prep-db:
-	@echo "--- Cleaning up compile_commands.json for Clang ---"
+	@echo "--- Cleaning up compile_commands.json for Clang & Cppcheck ---"
 	@sed -i 's/-fno-shrink-wrap//g' $(COMPILE_DB)
 	@sed -i 's/-fno-tree-switch-conversion//g' $(COMPILE_DB)
 	@sed -i 's/-fstrict-volatile-bitfields//g' $(COMPILE_DB)
 	@sed -i 's/-mlongcalls//g' $(COMPILE_DB)
+	@sed -i '/project_elf_src_esp32.c/d' $(COMPILE_DB)
 
 	
 # --------------- Static Analysis Jobs -------------------------------
