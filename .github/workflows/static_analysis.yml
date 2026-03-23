@@ -32,8 +32,8 @@ jobs:
               pip install colcon-common-extensions catkin_pkg lark && \
               
               # Build the project to generate compile_commands.json
-              idf.py reconfigure && \
+              make build && \
               
-              # Run linting via Makefile
+              # Run Static Analysis
               make tidy-check-ci && make cppcheck
             "
