@@ -54,8 +54,6 @@
 
 enum
 {
-    UROS_TASK_STACK_SIZE = 4000,
-    UROS_TASK_PRIORITY = 5,
     UROS_LOOP_HZ = 50,
 
     STALL_THRESHOLD_MS = 200,
@@ -393,9 +391,9 @@ void app_main(void)
     xTaskCreatePinnedToCore(
         micro_ros_task,
         "uros_task",
-        UROS_TASK_STACK_SIZE,
+        CONFIG_MICRO_ROS_STACK_SIZE,
         NULL,
-        UROS_TASK_PRIORITY,
+        CONFIG_MICRO_ROS_TASK_PRIO,
         NULL,
         1); // On APP_CPU
 }

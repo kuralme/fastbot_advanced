@@ -94,7 +94,6 @@ prep-db:
 	@sed -i 's/-fno-tree-switch-conversion//g' $(COMPILE_DB)
 	@sed -i 's/-fstrict-volatile-bitfields//g' $(COMPILE_DB)
 	@sed -i 's/-mlongcalls//g' $(COMPILE_DB)
-	@sed -i '/project_elf_src_esp32.c/d' $(COMPILE_DB)
 
 	
 # --------------- Static Analysis Jobs -------------------------------
