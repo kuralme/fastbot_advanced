@@ -54,14 +54,13 @@
 
 enum
 {
-    UROS_LOOP_HZ = 50,
-
-    STALL_THRESHOLD_MS = 200,
-    MIN_VALID_PWM = 50,
-
     MS_PER_SEC = 1000,
     US_PER_SEC = 1000000,
     NS_PER_MS = 1000000,
+
+    UROS_LOOP_MS = 50,
+    STALL_THRESHOLD_MS = 200,
+    MIN_VALID_PWM = 50,
 
     CMD_VEL_TIMEOUT_MS = 300,
     UROS_AGENT_PING_TIMEOUT_MS = 100,
@@ -84,8 +83,8 @@ static const uint64_t kpid_tim_us = CNT_TS * US_PER_SEC; // PID timer in microse
 typedef struct
 {
     rclc_support_t support;
-    rcl_node_t node;
     rclc_executor_t executor;
+    rcl_node_t node;
     rcl_publisher_t odom_pub;
     rcl_publisher_t heartbeat_pub;
     rcl_subscription_t twist_sub;
@@ -226,18 +225,18 @@ void reset_service_cb(const void *req __attribute__((unused)), void *res)
     res_in->message.capacity = res_in->message.size + 1;
 }
 
-void destroy_uros_entities(rcl_node_t *node, rclc_executor_t *executor, rcl_publisher_t *odom_pub,
-                           rcl_publisher_t *heartbeat_pub, rcl_subscription_t *twist_sub, rcl_service_t *service)
+void destroy_uros_entities(uros_entities_t *ent)
 {
-    rmw_context_t *rmw_context = rcl_context_get_rmw_context(node->context);
+    rmw_context_t *rmw_context = rcl_context_get_rmw_context((&ent->node)->context);
     (void)rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
 
-    (void)rclc_executor_fini(executor);
-    (void)rcl_publisher_fini(odom_pub, node);
-    (void)rcl_publisher_fini(heartbeat_pub, node);
-    (void)rcl_subscription_fini(twist_sub, node);
-    (void)rcl_service_fini(service, node);
-    (void)rcl_node_fini(node);
+    (void)rcl_publisher_fini(&ent->odom_pub, &ent->node);
+    (void)rcl_publisher_fini(&ent->heartbeat_pub, &ent->node);
+    (void)rcl_subscription_fini(&ent->twist_sub, &ent->node);
+    (void)rcl_service_fini(&ent->reset_service, &ent->node);
+    (void)rcl_node_fini(&ent->node);
+    (void)rclc_support_fini(&ent->support);
+    (void)rclc_executor_fini(&ent->executor);
 }
 static bool init_uros_entities(uros_entities_t *ent, rcl_allocator_t *alloc,
                                geometry_msgs__msg__Twist *twist_msg,
@@ -283,6 +282,10 @@ static void publish_telemetry(uros_entities_t *ent, nav_msgs__msg__Odometry *msg
     (void)rcl_publish(&ent->heartbeat_pub, msg_hb, NULL);
 
     // Odometry
+    static char odom_frame[] = "odom";
+    msg_odom->header.frame_id.data = odom_frame;
+    msg_odom->header.frame_id.size = strlen(odom_frame);
+    msg_odom->header.frame_id.capacity = sizeof(odom_frame);
     msg_odom->header.stamp.sec = (int32_t)(time_ms / MS_PER_SEC);
     msg_odom->header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
     msg_odom->pose.pose.position.x = state.x;
@@ -295,70 +298,74 @@ static void publish_telemetry(uros_entities_t *ent, nav_msgs__msg__Odometry *msg
 void micro_ros_task(void *arg __attribute__((unused)))
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
-    uros_entities_t uros_ent;
-    geometry_msgs__msg__Twist msg_twist_;
-    nav_msgs__msg__Odometry msg_odom_;
-    std_msgs__msg__Int32 heartbeat_msg_;
-    std_srvs__srv__Trigger_Request req;
-    std_srvs__srv__Trigger_Response res;
-
-    static char odom_frame[] = "odom";
-    msg_odom_.header.frame_id.data = odom_frame;
-    msg_odom_.header.frame_id.size = strlen(odom_frame);
-    msg_odom_.header.frame_id.capacity = sizeof(odom_frame);
+    static uros_entities_t uros_ent;
+    static geometry_msgs__msg__Twist msg_twist_;
+    static nav_msgs__msg__Odometry msg_odom_;
+    static std_msgs__msg__Int32 heartbeat_msg_;
+    static std_srvs__srv__Trigger_Request req;
+    static std_srvs__srv__Trigger_Response res;
 
     static int64_t last_sync_time_ = 0;
     esp_task_wdt_add(NULL); // Subscribe the task to TWDT
 
     while (1)
     {
-        // --- STATE 1: WAIT FOR AGENT ---
+        // --- STATE 1: WAIT FOR THE AGENT ---
         while (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
         {
             esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(500));
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
 
         // --- STATE 2: INITIALIZE MICRO-ROS ENTITIES ---
+        memset(&uros_ent, 0, sizeof(uros_entities_t));
         if (!init_uros_entities(&uros_ent, &allocator, &msg_twist_, &req, &res))
         {
-            destroy_uros_entities(&uros_ent.node, &uros_ent.executor, &uros_ent.odom_pub, &uros_ent.heartbeat_pub, &uros_ent.twist_sub, &uros_ent.reset_service);
+            destroy_uros_entities(&uros_ent);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
         bool initial_sync_done = false;
+        bool connection_alive = true;
+        int64_t last_ping_time = 0;
 
         // --- STATE 3: MAIN LOOP ---
-        while (1)
+        while (connection_alive)
         {
             esp_task_wdt_reset();
+            int64_t now_ms = esp_timer_get_time() / 1000;
 
-            if (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
+            // Monitor connection (Every 3 seconds)
+            if (now_ms - last_ping_time > 3000)
             {
-                vTaskDelay(pdMS_TO_TICKS(500));
-                continue;
+                if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK)
+                {
+                    connection_alive = false;
+                    break;
+                }
+                last_ping_time = now_ms;
             }
 
-            // Handle Time Sync (ESP32-Orange Pi clocks)
-            int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
+            // Time Sync (Every 30 seconds)
             if (!initial_sync_done || (now_ms - last_sync_time_ > SYNC_TIMEOUT_MS))
             {
-                if (rmw_uros_sync_session(UROS_AGENT_PING_TIMEOUT_MS) == RCL_RET_OK)
+                if (rmw_uros_sync_session(100) == RCL_RET_OK)
                 {
                     last_sync_time_ = now_ms;
                     initial_sync_done = true;
                 }
             }
+
             rclc_executor_spin_some(&uros_ent.executor, RCL_MS_TO_NS(UROS_SPIN_TIMEOUT_MS));
 
-            // Publish telemetry(Odom + Heartbeat) at 50Hz
+            // Publish Odom + Heartbeat (20Hz)
             publish_telemetry(&uros_ent, &msg_odom_, &heartbeat_msg_);
 
-            vTaskDelay(pdMS_TO_TICKS(UROS_LOOP_HZ));
+            vTaskDelay(pdMS_TO_TICKS(UROS_LOOP_MS));
         }
 
         // Cleanup before retrying
-        destroy_uros_entities(&uros_ent.node, &uros_ent.executor, &uros_ent.odom_pub, &uros_ent.heartbeat_pub, &uros_ent.twist_sub, &uros_ent.reset_service);
-        rclc_support_fini(&uros_ent.support);
+        destroy_uros_entities(&uros_ent);
     }
 }
 
