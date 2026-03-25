@@ -17,6 +17,8 @@ enum
     LEFT_ENC_A = 34,
     LEFT_ENC_B = 35
 };
+#define M_2PI (2.0F * (float)M_PI)
+#define METERS_PER_TICK (M_2PI * WHEEL_RADIUS / (float)TICKS_PER_REV)
 
 typedef struct
 {
@@ -82,8 +84,7 @@ void configure_encoders()
     (void)gpio_set_pull_mode(RIGHT_ENC_A, GPIO_PULLUP_ONLY);
     (void)gpio_set_pull_mode(RIGHT_ENC_B, GPIO_PULLUP_ONLY);
 
-    // log_isr_error(gpio_install_isr_service(0));
-    // Install GPIO ISR service with default configuration
+    // install isr with default configuration
     log_isr_error(gpio_install_isr_service(0));
 
     add_handler(LEFT_ENC_A, left_enc_cb);
@@ -107,15 +108,19 @@ void update_robot_state()
     long curr_r = g_odom.right_ticks;
     portEXIT_CRITICAL(&g_odom.tick_mux);
 
-    const float meters_per_tick = (2.0F * (float)M_PI * WHEEL_RADIUS) / (float)TICKS_PER_REV;
-    float d_l = (float)(curr_l - last_l) * meters_per_tick;
-    float d_r = (float)(curr_r - last_r) * meters_per_tick;
+    // Calculate distance traveled by each wheel since the last update
+    float d_l = (float)(curr_l - last_l) * METERS_PER_TICK;
+    float d_r = (float)(curr_r - last_r) * METERS_PER_TICK;
+
+    // Update tick counts for the next iteration
+    last_l = curr_l;
+    last_r = curr_r;
 
     float d_dist = (d_r + d_l) / HALF_DIVISOR;
     float d_theta = (d_r - d_l) / WHEEL_BASE;
 
-    float local_vel_l = d_l / CNT_TS;
-    float local_vel_r = d_r / CNT_TS;
+    float local_vel_l = d_l / PID_TS;
+    float local_vel_r = d_r / PID_TS;
 
     float ma_sin = 0.0F;
     float ma_cos = 0.0F;
@@ -130,9 +135,18 @@ void update_robot_state()
     sincosf(move_angle, &ma_sin, &ma_cos);
     g_odom.state.x += d_dist * ma_cos;
     g_odom.state.y += d_dist * ma_sin;
-    g_odom.state.theta += d_theta;
     g_odom.state.vel_l = local_vel_l;
     g_odom.state.vel_r = local_vel_r;
+
+    g_odom.state.theta += d_theta;
+    if (g_odom.state.theta > M_PI)
+    {
+        g_odom.state.theta -= M_2PI;
+    }
+    if (g_odom.state.theta < -M_PI)
+    {
+        g_odom.state.theta += M_2PI;
+    }
 
     portEXIT_CRITICAL(&g_odom.state_mux);
 }

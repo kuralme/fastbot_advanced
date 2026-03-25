@@ -60,11 +60,12 @@ enum
 
     UROS_LOOP_MS = 50,
     STALL_THRESHOLD_MS = 200,
-    MIN_VALID_PWM = 50,
+    MIN_VALID_PWM = 45,
 
     CMD_VEL_TIMEOUT_MS = 300,
     UROS_AGENT_PING_TIMEOUT_MS = 100,
     UROS_SPIN_TIMEOUT_MS = 10,
+    UROS_CONNECTION_TIMEOUT_MS = 3000,
     SYNC_TIMEOUT_MS = 30000,
     WATCHDOG_TIMEOUT_MS = 5000
 };
@@ -78,7 +79,7 @@ typedef enum
 #define FILTER_ALPHA 0.5F
 #define STALL_TICKS (STALL_THRESHOLD_MS / 20)            // 10 iterations at 50Hz
 #define MIN_VALID_VEL 0.001F                             // For stall detection
-static const uint64_t kpid_tim_us = CNT_TS * US_PER_SEC; // PID timer in microsec (50Hz)
+static const uint64_t kpid_tim_us = PID_TS * US_PER_SEC; // PID timer in microsec (50Hz)
 
 typedef struct
 {
@@ -109,7 +110,8 @@ static robot_manager_t g_bot = {
     .stall_counter = 0,
     .first_cmd_received = false,
     .filtered_vel_l = 0.0F,
-    .filtered_vel_r = 0.0F};
+    .filtered_vel_r = 0.0F,
+};
 
 void IRAM_ATTR pid_timer_cb(void *arg __attribute__((unused)))
 {
@@ -117,6 +119,15 @@ void IRAM_ATTR pid_timer_cb(void *arg __attribute__((unused)))
     if (g_bot.status != SYSTEM_OK)
     {
         set_motor_speeds(0, 0);
+        return;
+    }
+
+    // Skip PID if both setpoints are near zero
+    if (fabsf(g_bot.pid_l.setpoint) < MIN_VALID_VEL && fabsf(g_bot.pid_r.setpoint) < MIN_VALID_VEL)
+    {
+        set_motor_speeds(0, 0);
+        pid_reset(&g_bot.pid_l);
+        pid_reset(&g_bot.pid_r);
         return;
     }
 
@@ -238,6 +249,7 @@ void destroy_uros_entities(uros_entities_t *ent)
     (void)rclc_support_fini(&ent->support);
     (void)rclc_executor_fini(&ent->executor);
 }
+
 static bool init_uros_entities(uros_entities_t *ent, rcl_allocator_t *alloc,
                                geometry_msgs__msg__Twist *twist_msg,
                                std_srvs__srv__Trigger_Request *req,
@@ -298,7 +310,6 @@ static void publish_telemetry(uros_entities_t *ent, nav_msgs__msg__Odometry *msg
 void micro_ros_task(void *arg __attribute__((unused)))
 {
     rcl_allocator_t allocator = rcl_get_default_allocator();
-    static uros_entities_t uros_ent;
     static geometry_msgs__msg__Twist msg_twist_;
     static nav_msgs__msg__Odometry msg_odom_;
     static std_msgs__msg__Int32 heartbeat_msg_;
@@ -318,7 +329,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
         }
 
         // --- STATE 2: INITIALIZE MICRO-ROS ENTITIES ---
-        memset(&uros_ent, 0, sizeof(uros_entities_t));
+        static uros_entities_t uros_ent = {0};
         if (!init_uros_entities(&uros_ent, &allocator, &msg_twist_, &req, &res))
         {
             destroy_uros_entities(&uros_ent);
@@ -326,21 +337,19 @@ void micro_ros_task(void *arg __attribute__((unused)))
             continue;
         }
         bool initial_sync_done = false;
-        bool connection_alive = true;
         int64_t last_ping_time = 0;
 
         // --- STATE 3: MAIN LOOP ---
-        while (connection_alive)
+        while (1)
         {
             esp_task_wdt_reset();
-            int64_t now_ms = esp_timer_get_time() / 1000;
+            int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
 
             // Monitor connection (Every 3 seconds)
-            if (now_ms - last_ping_time > 3000)
+            if (now_ms - last_ping_time > UROS_CONNECTION_TIMEOUT_MS)
             {
-                if (rmw_uros_ping_agent(100, 1) != RCL_RET_OK)
+                if (rmw_uros_ping_agent(UROS_AGENT_PING_TIMEOUT_MS, 1) != RCL_RET_OK)
                 {
-                    connection_alive = false;
                     break;
                 }
                 last_ping_time = now_ms;
@@ -349,7 +358,7 @@ void micro_ros_task(void *arg __attribute__((unused)))
             // Time Sync (Every 30 seconds)
             if (!initial_sync_done || (now_ms - last_sync_time_ > SYNC_TIMEOUT_MS))
             {
-                if (rmw_uros_sync_session(100) == RCL_RET_OK)
+                if (rmw_uros_sync_session(UROS_AGENT_PING_TIMEOUT_MS) == RCL_RET_OK)
                 {
                     last_sync_time_ = now_ms;
                     initial_sync_done = true;

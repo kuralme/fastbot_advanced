@@ -82,7 +82,7 @@ void set_motor_speeds(int left_pwm, int right_pwm)
 
 int apply_deadzone(int pwm)
 {
-    if (pwm == 0)
+    if (abs(pwm) < 2)
     {
         return 0;
     }
