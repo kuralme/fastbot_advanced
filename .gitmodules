@@ -1,0 +1,3 @@
+[submodule "slam/stella_vslam_ros"]
+	path = slam/stella_vslam_ros
+	url = git@github.com:kuralme/stella_vslam_ros.git
