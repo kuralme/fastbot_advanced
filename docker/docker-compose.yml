@@ -26,8 +26,9 @@ services:
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix/:/tmp/.X11-unix/
+      - ../slam/stella_vslam_ros/:/ros2_ws/src/stella_vslam_ros/
     entrypoint: /ros_entrypoint.sh
-    # command: ros2 launch depthai_ros_driver camera.launch.py
+    command: ros2 launch stella_vslam_ros oakd_vslam.launch.py 
 
   # fastbot-imu-driver:
   #   build:

@@ -82,13 +82,13 @@ RUN set -x && \
 # ==================== Build the ros2 workspace ===============================
 RUN mkdir -p /ros2_ws/src
 WORKDIR /ros2_ws
-COPY slam/stella_vslam_ros src/stella_vslam_ros
+# COPY slam/stella_vslam_ros src/stella_vslam_ros
 
-RUN set -x && \
-  : "build ROS2 packages" && \
-  bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash; \
-  colcon build --parallel-workers ${NUM_THREADS} --cmake-args \
-    -DUSE_STACK_TRACE_LOGGER=ON"
+# RUN set -x && \
+#   : "build ROS2 packages" && \
+#   bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash; \
+#   colcon build --parallel-workers ${NUM_THREADS} --cmake-args \
+#     -DUSE_STACK_TRACE_LOGGER=ON"
 
 COPY docker/ros_entrypoint.sh /
 COPY docker/fastdds_profile.xml /
