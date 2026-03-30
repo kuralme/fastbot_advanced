@@ -1,6 +1,6 @@
 services:
   micro-ros-agent:
-    image: microros/micro-ros-agent:jazzy
+    image: microros/micro-ros-agent:humble
     container_name: micro-ros-agent
     privileged: true
     network_mode: host
@@ -20,8 +20,6 @@ services:
     network_mode: host
     ipc: host
     environment:
-      # QT_X11_NO_MITSHM: 1
-      # DISPLAY: ${DISPLAY}
       ROS_DOMAIN_ID: 0
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       FASTRTPS_DEFAULT_PROFILES_FILE: /fastdds_profile.xml
@@ -29,7 +27,7 @@ services:
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix/:/tmp/.X11-unix/
     entrypoint: /ros_entrypoint.sh
-    command: ros2 launch depthai_ros_driver camera.launch.py
+    # command: ros2 launch depthai_ros_driver camera.launch.py
 
   # fastbot-imu-driver:
   #   build:

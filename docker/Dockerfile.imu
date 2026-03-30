@@ -1,4 +1,4 @@
-FROM arm64v8/ros:jazzy-ros-base-noble
+FROM arm64v8/ros:humble
 
 # Install dependencies
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
