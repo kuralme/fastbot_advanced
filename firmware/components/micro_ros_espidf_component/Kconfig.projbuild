@@ -205,7 +205,7 @@ menu "Ethernet Configuration"
 
     config MICRO_ROS_ETH_PHY_RST_GPIO
         int "PHY Reset GPIO number"
-        default 51 if IDF_TARGET_ESP32P4
+        default 51 if IDF_TARGET_ESP32P4 
         default 5
         help
             Set the GPIO number used to reset PHY chip.

@@ -8,7 +8,8 @@
         },
         "rcl":{
             "cmake-args":[
-                "-DRCL_MICROROS=ON"
+                "-DRCL_COMMAND_LINE_ENABLED=OFF",
+                "-DRCL_LOGGING_ENABLED=OFF"
             ]
         },
         "rcutils": {
