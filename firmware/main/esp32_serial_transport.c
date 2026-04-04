@@ -11,7 +11,7 @@
 // --- micro-ROS Transports ---
 enum
 {
-    UART_BUFFER_SIZE = (1024), // default: 512
+    UART_BUFFER_SIZE = (2048), // default: 512
     UART_BAUD_RATE = (921600)  // default: 115200
 };
 
@@ -35,7 +35,7 @@ bool esp32_serial_open(struct uxrCustomTransport *transport)
     {
         return false;
     }
-    if (uart_driver_install(*uart_port, UART_BUFFER_SIZE * 2, 0, 0, NULL, 0) == ESP_FAIL)
+    if (uart_driver_install(*uart_port, UART_BUFFER_SIZE * 4, 0, 0, NULL, 0) == ESP_FAIL)
     {
         return false;
     }
