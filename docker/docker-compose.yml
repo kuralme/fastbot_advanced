@@ -1,14 +1,16 @@
 services:
   micro-ros-agent:
-    image: microros/micro-ros-agent:humble
+    image: microros/micro-ros-agent:jazzy
     container_name: micro-ros-agent
     privileged: true
     network_mode: host
+    restart: always
+    attach: false
     environment:
       ROS_DOMAIN_ID: 0
     devices:
       - /dev/ttyUSB0:/dev/esp32
-    command: serial --dev /dev/esp32 --baudrate 921600 -v6
+    command: serial --dev /dev/esp32 --baudrate 921600 -v6 --restart_transport true
 
   fastbot-ros2-slam:
     build:
