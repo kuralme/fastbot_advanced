@@ -40,13 +40,13 @@ static odom_manager_t g_odom = {
 void IRAM_ATTR left_enc_cb()
 {
     portENTER_CRITICAL_ISR(&g_odom.tick_mux);
-    (gpio_get_level(LEFT_ENC_A) == gpio_get_level(LEFT_ENC_B)) ? g_odom.left_ticks++ : g_odom.left_ticks--;
+    (gpio_get_level(LEFT_ENC_A) == gpio_get_level(LEFT_ENC_B)) ? g_odom.left_ticks-- : g_odom.left_ticks++;
     portEXIT_CRITICAL_ISR(&g_odom.tick_mux);
 }
 void IRAM_ATTR right_enc_cb()
 {
     portENTER_CRITICAL_ISR(&g_odom.tick_mux);
-    (gpio_get_level(RIGHT_ENC_A) != gpio_get_level(RIGHT_ENC_B)) ? g_odom.right_ticks++ : g_odom.right_ticks--;
+    (gpio_get_level(RIGHT_ENC_A) != gpio_get_level(RIGHT_ENC_B)) ? g_odom.right_ticks-- : g_odom.right_ticks++;
     portEXIT_CRITICAL_ISR(&g_odom.tick_mux);
 }
 static void log_isr_error(esp_err_t err)

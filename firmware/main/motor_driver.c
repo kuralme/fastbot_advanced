@@ -1,4 +1,5 @@
 #include "motor_driver.h"
+#include "driver/ledc.h"
 
 #define L_F_CH LEDC_CHANNEL_0
 #define L_B_CH LEDC_CHANNEL_1
@@ -82,7 +83,7 @@ void set_motor_speeds(int left_pwm, int right_pwm)
 
 int apply_deadzone(int pwm)
 {
-    if (abs(pwm) < 2)
+    if (pwm == 0)
     {
         return 0;
     }

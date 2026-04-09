@@ -62,7 +62,7 @@ enum
     STALL_THRESHOLD_MS = 200,
     MIN_VALID_PWM = 45,
 
-    CMD_VEL_TIMEOUT_MS = 300,
+    CMD_VEL_TIMEOUT_MS = 500,
     UROS_AGENT_PING_TIMEOUT_MS = 100,
     UROS_SPIN_TIMEOUT_MS = 10,
     UROS_CONNECTION_TIMEOUT_MS = 3000,
@@ -122,12 +122,9 @@ void IRAM_ATTR pid_timer_cb(void *arg __attribute__((unused)))
         return;
     }
 
-    // Skip PID if both setpoints are near zero
-    if (fabsf(g_bot.pid_l.setpoint) < MIN_VALID_VEL && fabsf(g_bot.pid_r.setpoint) < MIN_VALID_VEL)
+    if (!g_bot.first_cmd_received)
     {
         set_motor_speeds(0, 0);
-        pid_reset(&g_bot.pid_l);
-        pid_reset(&g_bot.pid_r);
         return;
     }
 
@@ -139,55 +136,48 @@ void IRAM_ATTR pid_timer_cb(void *arg __attribute__((unused)))
     g_bot.filtered_vel_l = (FILTER_ALPHA * state.vel_l) + (1.0F - FILTER_ALPHA) * g_bot.filtered_vel_l;
     g_bot.filtered_vel_r = (FILTER_ALPHA * state.vel_r) + (1.0F - FILTER_ALPHA) * g_bot.filtered_vel_r;
 
-    // Watchdog & PID Compute
+    // --- WATCHDOG ---
     int64_t now_ms = esp_timer_get_time() / MS_PER_SEC;
-    if (!g_bot.first_cmd_received)
-    {
-        if (g_bot.last_cmd_time > 0)
-        {
-            g_bot.first_cmd_received = true;
-        }
-        else
-        {
-            set_motor_speeds(0, 0);
-            return;
-        }
-    }
     if (now_ms - g_bot.last_cmd_time > CMD_VEL_TIMEOUT_MS)
     {
         set_motor_speeds(0, 0);
-        pid_reset(&g_bot.pid_l);
-        pid_reset(&g_bot.pid_r);
-        // g_bot.status = SYSTEM_FAULT_WATCHDOG;
+
+        if (g_bot.pid_l.setpoint != 0 || g_bot.pid_r.setpoint != 0)
+        {
+            g_bot.pid_l.setpoint = 0;
+            g_bot.pid_r.setpoint = 0;
+            pid_reset(&g_bot.pid_l);
+            pid_reset(&g_bot.pid_r);
+        }
+        return;
+    }
+
+    // --- PID OUTPUTS ---
+    int out_l = pid_compute(&g_bot.pid_l, g_bot.filtered_vel_l);
+    int out_r = pid_compute(&g_bot.pid_r, g_bot.filtered_vel_r);
+
+    // --- ENCODER SANITY CHECK ---
+    // Significant cmd but near-zero movement
+    bool motor_stuck = (abs(out_l) > MIN_VALID_PWM && fabsf(state.vel_l) < MIN_VALID_VEL) ||
+                       (abs(out_r) > MIN_VALID_PWM && fabsf(state.vel_r) < MIN_VALID_VEL);
+
+    if (motor_stuck)
+    {
+        g_bot.stall_counter++;
     }
     else
     {
-        int out_l = pid_compute(&g_bot.pid_l, g_bot.filtered_vel_l);
-        int out_r = pid_compute(&g_bot.pid_r, g_bot.filtered_vel_r);
-
-        // --- ENCODER SANITY CHECK ---
-        // Significant cmd but near-zero movement
-        bool motor_stuck = (abs(out_l) > MIN_VALID_PWM && fabsf(state.vel_l) < MIN_VALID_VEL) ||
-                           (abs(out_r) > MIN_VALID_PWM && fabsf(state.vel_r) < MIN_VALID_VEL);
-
-        if (motor_stuck)
-        {
-            g_bot.stall_counter++;
-        }
-        else
-        {
-            g_bot.stall_counter = 0;
-        }
-
-        if (g_bot.stall_counter > STALL_TICKS)
-        {
-            g_bot.status = SYSTEM_FAULT_STALL;
-            set_motor_speeds(0, 0);
-            return;
-        }
-
-        set_motor_speeds(apply_deadzone(out_l), apply_deadzone(out_r));
+        g_bot.stall_counter = 0;
     }
+
+    if (g_bot.stall_counter > STALL_TICKS)
+    {
+        g_bot.status = SYSTEM_FAULT_STALL;
+        set_motor_speeds(0, 0);
+        return;
+    }
+
+    set_motor_speeds(apply_deadzone(out_l), apply_deadzone(out_r));
 }
 
 void controller_init(void)
@@ -207,8 +197,9 @@ void controller_init(void)
 
 void twist_cb(const void *msgin)
 {
-    g_bot.last_cmd_time = esp_timer_get_time() / MS_PER_SEC;
     const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msgin;
+    g_bot.last_cmd_time = esp_timer_get_time() / MS_PER_SEC;
+    g_bot.first_cmd_received = true;
 
     // Target wheel speeds in m/s
     g_bot.pid_l.setpoint = (float)msg->linear.x - ((float)msg->angular.z * WHEEL_SEPERATION);

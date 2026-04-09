@@ -1,5 +1,6 @@
 #include "pid.h"
 #include "common.h"
+#include <math.h>
 
 void pid_init(PID_t *pid, PID_t config)
 {
@@ -22,10 +23,16 @@ void pid_reset(PID_t *pid)
 int pid_compute(PID_t *pid, float measured)
 {
     float error = pid->setpoint - measured;
-
     float feed_forward = pid->setpoint * pid->kff;
 
-    pid->integral += error * PID_TS;
+    if (fabsf(pid->setpoint) < MIN_SETPOINT)
+    {
+        pid->integral /= HALF_DIVISOR;
+    }
+    else
+    {
+        pid->integral += error * PID_TS;
+    }
     if (pid->integral > PID_INT_LIMIT)
     {
         pid->integral = PID_INT_LIMIT;

@@ -11,6 +11,8 @@
 #define PID_KD_DEFAULT 10.0F
 #define PID_KFF_DEFAULT 18.0F
 
+#define MIN_SETPOINT 0.05F
+
 typedef struct
 {
     float kp, ki, kd, kff;
