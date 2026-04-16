@@ -41,7 +41,7 @@ RUN set -x && \
   : "remove cache" && \
   rm -rf /var/lib/apt/lists/*
 
-ARG NUM_THREADS=4
+ARG NUM_THREADS=2
 ARG CMAKE_INSTALL_PREFIX=/usr/local
 ENV CPATH=${CMAKE_INSTALL_PREFIX}/include:${CPATH}
 ENV C_INCLUDE_PATH=${CMAKE_INSTALL_PREFIX}/include:${C_INCLUDE_PATH}

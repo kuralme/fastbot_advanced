@@ -10,7 +10,7 @@ services:
       ROS_DOMAIN_ID: 0
     devices:
       - /dev/ttyUSB0:/dev/esp32
-    command: serial --dev /dev/esp32 --baudrate 921600 -v6 --restart_transport true
+    command: serial --dev /dev/esp32 --baudrate 921600 -v4 --restart_transport true
 
   fastbot-ros2-slam:
     build:
@@ -26,6 +26,7 @@ services:
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
       FASTRTPS_DEFAULT_PROFILES_FILE: /fastdds_profile.xml
     volumes:
+      - /dev/joy:/dev/joy
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix/:/tmp/.X11-unix/
       - ../slam/stella_vslam_ros/:/ros2_ws/src/stella_vslam_ros/
