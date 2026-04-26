@@ -76,6 +76,23 @@ typedef enum
     SYSTEM_FAULT_WATCHDOG
 };
 
+// Variance
+static const float VAR_POSE_XY = 0.01F;
+static const float VAR_POSE_YAW = 0.05F;
+static const float VAR_POSE_ZERO = 1e-9F;
+static const float VAR_TWIST_VX = 0.005F;
+static const float VAR_TWIST_VYAW = 0.01F;
+enum
+{ // Diagonal Indices for a 6x6 matrix
+    IDX_X = 0,
+    IDX_Y = 7,
+    IDX_Z = 14,
+    IDX_ROLL = 21,
+    IDX_PITCH = 28,
+    IDX_YAW = 35,
+    COV_SIZE = 36
+};
+
 #define FILTER_ALPHA 0.5F
 #define STALL_TICKS (STALL_THRESHOLD_MS / 20)            // 10 iterations at 50Hz
 #define MIN_VALID_VEL 0.001F                             // For stall detection
@@ -256,7 +273,7 @@ static bool init_uros_entities(uros_entities_t *ent, rcl_allocator_t *alloc,
     }
 
     // Publishers
-    (void)rclc_publisher_init_default(&ent->odom_pub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/fastbot/odom");
+    (void)rclc_publisher_init_default(&ent->odom_pub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/fastbot/encoder_odom");
     (void)rclc_publisher_init_default(&ent->heartbeat_pub, &ent->node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "/fastbot/heartbeat");
 
     // Subscriptions & Services
@@ -284,17 +301,53 @@ static void publish_telemetry(uros_entities_t *ent, nav_msgs__msg__Odometry *msg
     msg_hb->data = (int32_t)g_bot.status;
     (void)rcl_publish(&ent->heartbeat_pub, msg_hb, NULL);
 
-    // Odometry
+    // Frames
     static char odom_frame[] = "odom";
+    static char base_frame[] = "base_link";
+
     msg_odom->header.frame_id.data = odom_frame;
     msg_odom->header.frame_id.size = strlen(odom_frame);
-    msg_odom->header.frame_id.capacity = sizeof(odom_frame);
+    msg_odom->child_frame_id.data = base_frame;
+    msg_odom->child_frame_id.size = strlen(base_frame);
+    msg_odom->child_frame_id.capacity = sizeof(base_frame);
+
+    // Timestamp
     msg_odom->header.stamp.sec = (int32_t)(time_ms / MS_PER_SEC);
     msg_odom->header.stamp.nanosec = (uint32_t)((time_ms % MS_PER_SEC) * NS_PER_MS);
+
+    // Pose
     msg_odom->pose.pose.position.x = state.x;
     msg_odom->pose.pose.position.y = state.y;
     msg_odom->pose.pose.orientation.z = sinf(state.theta / HALF_DIVISOR);
     msg_odom->pose.pose.orientation.w = cosf(state.theta / HALF_DIVISOR);
+
+    // Twist (Velocities)
+    float linear_x = (state.vel_r + state.vel_l) / HALF_DIVISOR;
+    float angular_z = (state.vel_r - state.vel_l) / WHEEL_BASE;
+
+    msg_odom->twist.twist.linear.x = linear_x;
+    msg_odom->twist.twist.angular.z = angular_z;
+
+    // --- Pose Variances ---
+    for (int i = 0; i < COV_SIZE; i++)
+    {
+        msg_odom->pose.covariance[i] = 0.0;
+    }
+    msg_odom->pose.covariance[IDX_X] = VAR_POSE_XY;
+    msg_odom->pose.covariance[IDX_Y] = VAR_POSE_XY;
+    msg_odom->pose.covariance[IDX_Z] = VAR_POSE_ZERO;
+    msg_odom->pose.covariance[IDX_ROLL] = VAR_POSE_ZERO;
+    msg_odom->pose.covariance[IDX_PITCH] = VAR_POSE_ZERO;
+    msg_odom->pose.covariance[IDX_YAW] = VAR_POSE_YAW;
+
+    // --- Twist (Velocity) Variances ---
+    for (int i = 0; i < COV_SIZE; i++)
+    {
+        msg_odom->twist.covariance[i] = 0.0;
+    }
+    msg_odom->twist.covariance[IDX_X] = VAR_TWIST_VX;
+    msg_odom->twist.covariance[IDX_YAW] = VAR_TWIST_VYAW;
+
     (void)rcl_publish(&ent->odom_pub, msg_odom, NULL);
 }
 
