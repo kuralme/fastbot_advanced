@@ -1,0 +1,4 @@
+rosbag2:
+  storage_plugin_id: "mcap"
+  compression_mode: "message"
+  compression_format: "zstd"
