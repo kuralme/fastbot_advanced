@@ -82,8 +82,6 @@ RUN set -x && \
 RUN mkdir -p /ros2_ws/src
 WORKDIR /ros2_ws
 COPY slam/stella_vslam_ros src/stella_vslam_ros
-COPY slam/record_mcap.sh .
-COPY slam/recording_config.yaml .
 
 RUN set -x && \
   : "build ROS2 packages" && \

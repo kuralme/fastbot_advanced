@@ -29,7 +29,7 @@ services:
       - /dev/joy:/dev/joy
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix/:/tmp/.X11-unix/
-      # - ../slam/stella_vslam_ros/:/ros2_ws/src/stella_vslam_ros/
+      - ../slam/recordings/:/ros2_ws/recordings/
     entrypoint: /ros_entrypoint.sh
     command: ros2 launch stella_vslam_ros oakd_vslam.launch.py 
 

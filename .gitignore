@@ -3,10 +3,11 @@ firmware/build/
 # firmware/sdkconfig
 firmware/sdkconfig.old
 
-# rosbag recordings
+# Recordings
 rosbag*
+*.msg
 
-# micro-ROS specific generated files and others
+# Micro-ROS specific generated files and others
 firmware/components/micro_ros_espidf_component/micro_ros_src/
 firmware/components/micro_ros_espidf_component/micro_ros_dev/
 firmware/components/micro_ros_espidf_component/include/
