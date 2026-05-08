@@ -2,7 +2,7 @@
 
 [![Firmware Static Analysis](https://github.com/kuralme/fastbot_advanced/actions/workflows/static_analysis.yml/badge.svg)](https://github.com/kuralme/fastbot_advanced/actions/workflows/static_analysis.yml)
 
-This project focuses on the development of a differential drive robot - Fastbot, with a criticality in mind. The system is designed with lower/higher level architectures, utilizing an **ESP32** for hard real-time motion control and safety, and an **Orange Pi 5B (OPi)** for high-level SLAM and Nonlinear Model Predictive Control (NMPC).
+This project focuses on the development of a differential drive robot - Fastbot, with a criticality in mind. The system is designed with lower/higher level architectures, utilizing an **ESP32** for hard real-time motion control and safety, and an **Raspberry Pi 4B** for high-level SLAM execution.
 
 ## 🚀 Project Goals
 
@@ -26,7 +26,7 @@ The firmware is built using **ESP-IDF**. It leverages the dual-core architecture
 
 * **Dual-Core Isolation:** Core 0 handles the 50Hz PID loop; Core 1 handles the micro-ROS communication.
 * **Atomic Safety Layer:** Uses C11 atomics to share system status between cores without locks.
-* **Self-Healing Transport:** A custom reconnection state machine that automatically restores the micro-ROS session if the Orange Pi reboots.
+* **Self-Healing Transport:** A custom reconnection state machine that automatically restores the micro-ROS session if the RPi reboots.
 * **Latching Stall Protection:** Monitors "PWM Effort vs. Encoder Result" to kill motor power if a physical stall is detected.
 
 #### Task Distribution Table
@@ -45,12 +45,42 @@ To ensure execution safety and deterministic behavior, the firmware is validated
 
 * **MISRA C:2012 / CERT C Compliance:** Using `cppcheck` and `clang-tidy` (via `cppcoreguidelines-*`), the codebase is audited for undefined behavior, pointer safety, and integer overflows.
 * **Zero-Allocation Principle:** Post-initialization, the Tier 1 control loops (PID, Safety Watchdog) avoid dynamic memory allocation (`malloc/free`) to prevent heap fragmentation and non-deterministic timing.
-* **Type Safety:** Strict enforcement of fixed-width integers (`uint32_t`, etc.) and `const`-correctness to ensure cross-platform predictability between the ESP32 and Orange Pi.
+* **Type Safety:** Strict enforcement of fixed-width integers (`uint32_t`, etc.) and `const`-correctness to ensure cross-platform predictability between the ESP32 and Raspberry Pi.
 
 ---
 
-### 2. 🧠 SLAM & Navigation (Orange Pi 5B - Tier 2: Medium Criticality)
+### 2. 🧠 SLAM (Raspberry Pi 4 - Tier 2: Medium Criticality)
 
-🚧 *Under Development*
+The high-level perception layer is hosted on a **Raspberry Pi 4B** running Ubuntu Server 22.04. This tier transforms raw sensor data into spatial intelligence, providing the robot with localization and environmental awareness while remaining isolated from the motor-critical safety loops.
 
-The high-level logic resides on an OPi running Armbian OS.
+#### Core Logic Features
+
+* **Visual SLAM Engine:** Uses [stella_vslam](https://stella-cv.readthedocs.io/en/latest/overview.html) for feature-based (ORB) stereo framework for robust localization and mapping. It maintains a sparse 3D point cloud and handles global optimization to eliminate spatial drift.
+* **Manual Mapping Workflow:** Currently optimized for joystick-driven mapping. High-level autonomous navigation is bypassed in favor of manual `teleop_twist_joy` control to ensure high-quality feature extraction in complex environments.
+* **Containerized Stack:** The entire ROS 2 environment is dockerized, ensuring consistent behavior between the RPi hardware and online running / offline processing on a pc.
+* **Unified Data Logging:** Uses the MCAP storage format for high-efficiency recording of stereo image streams, IMU data, and wheel odometry, allowing for deterministic offline re-runs.
+
+#### Technical Specifications
+
+| Component | Implementation | Role |
+| --- | --- | --- |
+| **Vision Input** | OAK-D Lite | Stereo rectified image streams (640x480). |
+| **Control Mode** | Teleop (Joystick) | Manual velocity command generation for mapping. |
+| **Data Storage** | MCAP (.mcap) | High-bandwidth recording of vision and telemetry data. |
+| **Map Database** | MessagePack (.msg) | Fast serialization for saving/loading spatial landmarks. |
+| **Transport** | micro-ROS Agent | High-speed UART bridge to the Tier 1 hardware. |
+
+#### Operation Modes
+
+Currently, the tested operations mode on the robot:
+
+* **Online Mapping:** The robot processes live stereo streams to build a sparse 3D map while navigating. This mode generates the initial .msg map database.
+
+* **Offline Re-localization:** Processing recorded .mcap bags on a workstation to refine the map or test new navigation parameters without physical hardware deployment.
+
+
+### 🚧 Improvements & Future Works
+
+* **Sensor Fusion:** It is possible to integrate an EKF fusion to the project; combining wheel odometry (from ESP32) with stereo visual odometry and IMU data.
+
+* **Global Optimization:** Stella-vslam uses _g2o_ optimization library by default, however its possible(and potentially better) to enable _GTSAM_ as well.
