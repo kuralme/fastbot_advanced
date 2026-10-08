@@ -33,19 +33,19 @@ services:
     entrypoint: /ros_entrypoint.sh
     command: ros2 launch stella_vslam_ros oakd_vslam.launch.py 
 
-  # fastbot-imu-driver:
-  #   build:
-  #       context: ..
-  #       dockerfile: docker/Dockerfile.imu
-  #   container_name: fastbot-imu-driver
-  #   network_mode: host
-  #   privileged: true
-  #   environment:
-  #     - ROS_DOMAIN_ID=0
-  #     - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-  #     - BLINKA_ORANGEPI_5=1
-  #   devices:
-  #     - /dev/i2c-5:/dev/i2c-5
-  #     - /dev/gpiochip4:/dev/gpiochip4
-  #     - /dev/mem:/dev/mem
-  #   command: python3 imu_node.py
+  fastbot-imu-driver:
+    build:
+        context: ..
+        dockerfile: docker/Dockerfile.imu
+    container_name: fastbot-imu-driver
+    network_mode: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - BLINKA_ORANGEPI_5=1
+    devices:
+      - /dev/i2c-5:/dev/i2c-5
+      - /dev/gpiochip4:/dev/gpiochip4
+      - /dev/mem:/dev/mem
+    command: python3 imu_node.py
